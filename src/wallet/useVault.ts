@@ -32,8 +32,9 @@ export function useVault(): VaultState {
   useEffect(() => {
     const contractId = process.env.NEXT_PUBLIC_VAULT_CONTRACT_ID
     if (!contractId || isDemo || !address) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reflects "no live source" back to the caller
       setLoading(false)
-      if (!fetchedAt) setFetchedAt(new Date())
+      setFetchedAt((prev) => prev ?? new Date())
       return
     }
 

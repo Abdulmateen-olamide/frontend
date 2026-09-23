@@ -97,7 +97,7 @@ export function compareBondsMetrics(bonds: Bond[]): Record<string, (string | num
   const metrics = ['yield', 'term', 'rating', 'name'] as const
   const result: Record<string, (string | number)[]> = {}
   for (const m of metrics) {
-    result[m] = bonds.map((b) => (b as any)[m])
+    result[m] = bonds.map((b) => b[m])
   }
   return result
 }

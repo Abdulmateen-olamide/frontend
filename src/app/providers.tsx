@@ -115,6 +115,7 @@ function OfflineBanner() {
       } catch {
         // ignore storage errors
       }
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- remembers the last connection so we can show the offline banner
       setWasConnected(true)
     }
   }, [connected])

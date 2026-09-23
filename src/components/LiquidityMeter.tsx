@@ -94,7 +94,7 @@ export function LiquidityMeter({
           }}
         >
           The pool holds {fmt(liquid)} liquid; the rest ({fmt(Math.max(0, total - liquid))}) is
-          working in projects. You can withdraw up to {fmt(liquid)} today, or any part of it.
+          working in projects. You can withdraw up to {fmt(liquid)} today, in full or in part.
         </p>
       )}
     </div>

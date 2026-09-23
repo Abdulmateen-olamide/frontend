@@ -81,6 +81,7 @@ export function WalletProvider({ children }: {children: ReactNode}) {
     try {
       const saved = localStorage.getItem('hb-network')
       if (saved === 'PUBLIC' || saved === 'TESTNET') {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate the saved network after mount (avoids a hydration mismatch)
         setNetworkState(saved)
       }
     } catch {
@@ -109,6 +110,7 @@ export function WalletProvider({ children }: {children: ReactNode}) {
       /* ignore */
     }
     if (!saved) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time restore from localStorage after mount
       setRestoring(false)
       return
     }
@@ -159,6 +161,7 @@ export function WalletProvider({ children }: {children: ReactNode}) {
       if (isTimeout && attempt < MAX_AUTO_RETRIES) {
         setRetryCount(attempt + 1)
         await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)))
+        // eslint-disable-next-line react-hooks/immutability -- deliberate bounded self-retry
         return connectWithRetry(attempt + 1)
       }
       setConnectionError(

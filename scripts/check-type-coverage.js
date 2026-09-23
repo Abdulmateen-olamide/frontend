@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable @typescript-eslint/no-require-imports -- Node CLI scripts use CommonJS require */
 
 /**
  * Type coverage checker, enforces zero `any` usage in source files.

@@ -64,8 +64,8 @@ export function EmailAuthModal({ open, onClose, onSuccess, onSocialLogin }: Emai
       // On success, notify parent and close the modal
       if (onSuccess) onSuccess(email)
       onClose()
-    } catch (err: any) {
-      setBioError(err.message || 'Biometric login failed')
+    } catch (err: unknown) {
+      setBioError((err instanceof Error && err.message) || 'Biometric login failed')
     } finally {
       setBioLoading(false)
     }
@@ -80,8 +80,8 @@ export function EmailAuthModal({ open, onClose, onSuccess, onSocialLogin }: Emai
       // After registration, log in automatically
       if (onSuccess) onSuccess(email)
       onClose()
-    } catch (err: any) {
-      setBioError(err.message || 'Biometric registration failed')
+    } catch (err: unknown) {
+      setBioError((err instanceof Error && err.message) || 'Biometric registration failed')
     } finally {
       setBioLoading(false)
     }

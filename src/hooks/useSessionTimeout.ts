@@ -57,7 +57,8 @@ export function useSessionTimeout({
   const [isWarningOpen, setIsWarningOpen] = useState(false)
   const [remainingSeconds, setRemainingSeconds] = useState(Math.round(warningMs / 1000))
 
-  const lastActivityRef = useRef<number>(Date.now())
+  // Seeded from 0; `scheduleWarning` stamps the real timestamp on mount.
+  const lastActivityRef = useRef<number>(0)
   const lastThrottleRef = useRef<number>(0)
   // Mirrors `isWarningOpen` for the activity listener, so the listener stays
   // stable while the warning state changes (re-scheduling on every open/close
@@ -142,6 +143,7 @@ export function useSessionTimeout({
   useEffect(() => {
     if (!enabled) {
       clearTimers()
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- disabling the hook tears the warning down
       setIsWarningOpen(false)
       return
     }

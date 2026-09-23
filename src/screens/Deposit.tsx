@@ -86,19 +86,22 @@ export function Deposit({ onDone }: DepositProps) {
     }
   }, [])
 
-  const changeStep = (newStep: DepositStep) => {
-    // auto-scroll to first error when navigating to amount with error
-    if (newStep === 'amount' && txError) {
-      setTimeout(() => scrollToFirstError(document), 100)
-    }
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-      abortControllerRef.current = null
-    }
-    if (mountedRef.current) {
-      setStep(newStep)
-    }
-  }
+  const changeStep = useCallback(
+    (newStep: DepositStep) => {
+      // auto-scroll to first error when navigating to amount with error
+      if (newStep === 'amount' && txError) {
+        setTimeout(() => scrollToFirstError(document), 100)
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+        abortControllerRef.current = null
+      }
+      if (mountedRef.current) {
+        setStep(newStep)
+      }
+    },
+    [txError],
+  )
 
   const handleDone = () => {
     setAmount('')
@@ -111,6 +114,7 @@ export function Deposit({ onDone }: DepositProps) {
   // Consolidate amount parsing with parseAmount helper (#417).
   const n = parseAmount(amount)
 
+  /* eslint-disable react-hooks/immutability -- the retry button in the error toast re-invokes this same submit handler */
   const handleSubmitDeposit = useCallback(async () => {
     changeStep('pending')
     setTxError(null)
@@ -171,6 +175,7 @@ export function Deposit({ onDone }: DepositProps) {
       }
     }
   }, [n, address, sign, markPending, clearPending, changeStep, toast])
+  /* eslint-enable react-hooks/immutability */
 
   const price = livePrice
   const balance = USER_BALANCE_USDC
@@ -334,6 +339,7 @@ export function Deposit({ onDone }: DepositProps) {
                 <span style={{ fontFamily: 'var(--font-data)', fontWeight: 600 }}>
                   {formatDecimal(pendingDeposit.amount, 2)} USDC
                 </span>{' '}
+                {/* eslint-disable-next-line react-hooks/purity -- relative elapsed time for the in-flight deposit notice */}
                 (started {Math.floor((Date.now() - pendingDeposit.startedAt) / 1000)}s ago) has not
                 yet confirmed. Submitting again before it settles may result in a duplicate
                 investment. Check your portfolio before proceeding.{' '}

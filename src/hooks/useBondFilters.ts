@@ -6,6 +6,7 @@ export function useBondFilters() {
   const [yieldRange, setYieldRangeState] = useState<[number, number]>([0, 15]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate the persisted filter after mount
     setYieldRangeState(getPersistedYieldRange());
   }, []);
 

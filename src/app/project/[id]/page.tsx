@@ -18,6 +18,7 @@ export default function ProjectDetailPage() {
 
   useEffect(() => {
     if (!Number.isFinite(id)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- an invalid route id resolves synchronously to the not-found state
       setData(null)
       return
     }

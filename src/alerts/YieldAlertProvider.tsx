@@ -58,10 +58,16 @@ export function YieldAlertProvider({ children }: { children: ReactNode }) {
   const [alerts, setAlerts] = useState<YieldAlert[]>([])
   const { toast } = useToast()
   const alertsRef = useRef(alerts)
-  alertsRef.current = alerts
+
+  // Mirror alerts into a ref for the interval listener below. Writing a ref
+  // during render is not allowed, so sync it after commit instead.
+  useEffect(() => {
+    alertsRef.current = alerts
+  }, [alerts])
 
   // Hydrate from localStorage on mount + cross-tab sync.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration from localStorage after mount (avoids a hydration mismatch)
     setAlerts(readAlerts())
 
     const syncOtherTabs = (event: StorageEvent) => {

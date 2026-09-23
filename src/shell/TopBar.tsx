@@ -486,6 +486,7 @@ function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
 
   useEffect(() => {
     if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear the confirm state when the menu closes
       setConfirming(false)
       if (cancelTimerRef.current) {
         clearTimeout(cancelTimerRef.current)

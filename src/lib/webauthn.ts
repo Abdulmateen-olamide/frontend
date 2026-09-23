@@ -28,7 +28,26 @@ interface PublicKeyCredentialJSON {
   response: Record<string, unknown>
 }
 
-async function postJSON(url: string, body: unknown): Promise<any> {
+/** A credential descriptor as it arrives over the wire (base64url-encoded id). */
+interface WireCredential {
+  id: string
+  [key: string]: unknown
+}
+
+interface RegistrationOptions {
+  challenge: string
+  user: { id: string; [key: string]: unknown }
+  excludeCredentials?: WireCredential[]
+  [key: string]: unknown
+}
+
+interface LoginOptions {
+  challenge: string
+  allowCredentials?: WireCredential[]
+  [key: string]: unknown
+}
+
+async function postJSON<T = unknown>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -38,25 +57,29 @@ async function postJSON(url: string, body: unknown): Promise<any> {
     const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error || `HTTP ${res.status}`)
   }
-  return res.json()
+  return (await res.json()) as T
 }
 
-export async function registerBiometric(username: string): Promise<any> {
-  const options = await postJSON('/webauthn/register/begin', { username })
+export async function registerBiometric(username: string): Promise<void> {
+  const options = await postJSON<RegistrationOptions>('/webauthn/register/begin', { username })
 
   // Convert base64url fields to ArrayBuffer for WebAuthn API
-  options.challenge = base64urlToArrayBuffer(options.challenge)
-  options.user.id = base64urlToArrayBuffer(options.user.id)
-  if (options.excludeCredentials) {
-    options.excludeCredentials = options.excludeCredentials.map((cred: any) => ({
+  const publicKey = {
+    ...options,
+    challenge: base64urlToArrayBuffer(options.challenge),
+    user: {
+      ...options.user,
+      id: base64urlToArrayBuffer(options.user.id),
+    },
+    excludeCredentials: options.excludeCredentials?.map((cred) => ({
       ...cred,
       id: base64urlToArrayBuffer(cred.id),
-    }))
-  }
+    })),
+  } as unknown as PublicKeyCredentialCreationOptions
 
   const credential = (await navigator.credentials.create({
-    publicKey: options,
-  })) as PublicKeyCredential & { response: AuthenticatorAttestationResponse }
+    publicKey,
+  })) as (PublicKeyCredential & { response: AuthenticatorAttestationResponse }) | null
 
   if (!credential) throw new Error('Registration canceled')
 
@@ -70,23 +93,24 @@ export async function registerBiometric(username: string): Promise<any> {
     },
   }
 
-  return postJSON('/webauthn/register/complete', { username, credential: credentialJSON })
+  return postJSON<void>('/webauthn/register/complete', { username, credential: credentialJSON })
 }
 
-export async function loginBiometric(username: string): Promise<any> {
-  const options = await postJSON('/webauthn/login/begin', { username })
+export async function loginBiometric(username: string): Promise<void> {
+  const options = await postJSON<LoginOptions>('/webauthn/login/begin', { username })
 
-  options.challenge = base64urlToArrayBuffer(options.challenge)
-  if (options.allowCredentials) {
-    options.allowCredentials = options.allowCredentials.map((cred: any) => ({
+  const publicKey = {
+    ...options,
+    challenge: base64urlToArrayBuffer(options.challenge),
+    allowCredentials: options.allowCredentials?.map((cred) => ({
       ...cred,
       id: base64urlToArrayBuffer(cred.id),
-    }))
-  }
+    })),
+  } as unknown as PublicKeyCredentialRequestOptions
 
   const assertion = (await navigator.credentials.get({
-    publicKey: options,
-  })) as PublicKeyCredential & { response: AuthenticatorAssertionResponse }
+    publicKey,
+  })) as (PublicKeyCredential & { response: AuthenticatorAssertionResponse }) | null
 
   if (!assertion) throw new Error('Authentication canceled')
 
@@ -104,5 +128,5 @@ export async function loginBiometric(username: string): Promise<any> {
     },
   }
 
-  return postJSON('/webauthn/login/complete', { username, credential: credentialJSON })
+  return postJSON<void>('/webauthn/login/complete', { username, credential: credentialJSON })
 }

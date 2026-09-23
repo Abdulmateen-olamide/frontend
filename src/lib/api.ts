@@ -146,7 +146,7 @@ export async function createInvestment(input: { projectId: number; amount: numbe
       ...data,
       projectUrl: `/projects/${encodeURIComponent(input.projectId)}`,
     }
-  } catch (error) {
+  } catch {
     console.warn('[api] POST /investments failed -- using mock data')
     return mockInvestment()
   }

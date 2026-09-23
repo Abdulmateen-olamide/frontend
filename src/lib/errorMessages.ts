@@ -44,17 +44,20 @@ function normalizeCode(code: string): string {
 
 function extractCodeFromError(error: unknown): string | null {
   if (!error || typeof error !== 'object') return null;
-  const obj = error as Record<string, any>;
+  const obj = error as Record<string, unknown>;
   // If it looks like an Axios/Axios-like error with a response
-  if (obj.response) {
-    const status = obj.response.status;
+  const response = obj.response;
+  if (response && typeof response === 'object') {
+    const responseObj = response as Record<string, unknown>;
+    const status = responseObj.status;
     if (typeof status === 'number' && status >= 500) {
       return String(status);
     }
-    const data = obj.response.data;
+    const data = responseObj.data;
     if (data && typeof data === 'object') {
-      if (typeof data.code === 'string') return data.code;
-      if (typeof data.message === 'string') return data.message;
+      const dataObj = data as Record<string, unknown>;
+      if (typeof dataObj.code === 'string') return dataObj.code;
+      if (typeof dataObj.message === 'string') return dataObj.message;
     } else if (typeof data === 'string' && data.trim()) {
       return data;
     }
