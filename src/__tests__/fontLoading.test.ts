@@ -22,6 +22,7 @@ const LEGACY_FONT_ORIGINS = [
 
 describe('webfont loading strategy', () => {
   it('loads fonts through next/font instead of remote CSS imports', () => {
+    // eslint-disable-next-line @next/next/no-assign-module-variable
     const module = readFile(fontsModulePath)
 
     expect(module).toContain("from 'next/font/google'")
@@ -31,6 +32,7 @@ describe('webfont loading strategy', () => {
   })
 
   it('self-hosts Cabinet Grotesk with the display weights (500/700/800)', () => {
+    // eslint-disable-next-line @next/next/no-assign-module-variable
     const module = readFile(fontsModulePath)
 
     expect(module).toContain('cabinet-grotesk-500.woff2')

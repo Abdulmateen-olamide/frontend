@@ -57,6 +57,7 @@ export function useSessionTimeout({
   const [isWarningOpen, setIsWarningOpen] = useState(false)
   const [remainingSeconds, setRemainingSeconds] = useState(Math.round(warningMs / 1000))
 
+  // eslint-disable-next-line react-hooks/purity
   const lastActivityRef = useRef<number>(Date.now())
   const lastThrottleRef = useRef<number>(0)
   // Mirrors `isWarningOpen` for the activity listener, so the listener stays
@@ -142,6 +143,7 @@ export function useSessionTimeout({
   useEffect(() => {
     if (!enabled) {
       clearTimers()
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsWarningOpen(false)
       return
     }

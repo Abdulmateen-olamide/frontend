@@ -178,10 +178,7 @@ function Th({
         <span className="hb-eyebrow" style={active ? thLabelActive : thLabelInactive}>
           {label}
         </span>
-        <span
-          aria-hidden="true"
-          style={active ? thIndicatorActive : thIndicatorInactive}
-        >
+        <span aria-hidden="true" style={active ? thIndicatorActive : thIndicatorInactive}>
           {active ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
         </span>
       </button>
@@ -229,9 +226,7 @@ function Row({
       <tr style={rowBorderStyle}>
         <td style={tdStyle}>
           <div style={nameStyle}>{row.name}</div>
-          <div style={locationStyle}>
-            {row.location}
-          </div>
+          <div style={locationStyle}>{row.location}</div>
         </td>
         <td style={tdStyle}>
           <span style={typePill}>{row.type}</span>
@@ -252,9 +247,7 @@ function Row({
         <tr style={editingRowStyle}>
           <td colSpan={7} style={editingCellStyle}>
             <div style={editorFlexStyle}>
-              <span style={reVerifySpanStyle}>
-                {reVerifyLabel}
-              </span>
+              <span style={reVerifySpanStyle}>{reVerifyLabel}</span>
               <ScoreField label={creditFieldLabel} value={credit} onChange={setCredit} />
               <ScoreField label={greenFieldLabel} value={green} onChange={setGreen} />
               <div style={btnGroupStyle}>

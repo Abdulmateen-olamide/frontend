@@ -1,31 +1,52 @@
-"use client";
+'use client'
 
-import { useState } from "react";
+import { useState } from 'react'
 import {
   computeQuarterlyTaxReport,
   quarterlyReportToCsv,
   downloadCsv,
   type InvestmentEvent,
-} from "@/lib/tax-report";
+} from '@/lib/tax-report'
 
 // TODO: replace with the real investor history source (likely something in
 // `src/data.ts` / `src/data/`, or the wallet/vault service) once wired up.
 // Kept local and clearly-marked so this screen renders correctly today
 // without depending on data shapes elsewhere in the app.
 const PLACEHOLDER_EVENTS: InvestmentEvent[] = [
-  { id: "1", projectName: "Solar Farm A", date: "2025-01-10", type: "deposit", amountUSD: 1000 },
-  { id: "2", projectName: "Solar Farm A", date: "2025-02-14", type: "distribution", amountUSD: 45, costBasisUSD: 0 },
-  { id: "3", projectName: "Wind Co B", date: "2025-04-05", type: "deposit", amountUSD: 500 },
-  { id: "4", projectName: "Solar Farm A", date: "2025-07-22", type: "withdrawal", amountUSD: 300, costBasisUSD: 250 },
-  { id: "5", projectName: "Wind Co B", date: "2025-10-11", type: "distribution", amountUSD: 30, costBasisUSD: 0 },
-];
+  { id: '1', projectName: 'Solar Farm A', date: '2025-01-10', type: 'deposit', amountUSD: 1000 },
+  {
+    id: '2',
+    projectName: 'Solar Farm A',
+    date: '2025-02-14',
+    type: 'distribution',
+    amountUSD: 45,
+    costBasisUSD: 0,
+  },
+  { id: '3', projectName: 'Wind Co B', date: '2025-04-05', type: 'deposit', amountUSD: 500 },
+  {
+    id: '4',
+    projectName: 'Solar Farm A',
+    date: '2025-07-22',
+    type: 'withdrawal',
+    amountUSD: 300,
+    costBasisUSD: 250,
+  },
+  {
+    id: '5',
+    projectName: 'Wind Co B',
+    date: '2025-10-11',
+    type: 'distribution',
+    amountUSD: 30,
+    costBasisUSD: 0,
+  },
+]
 
 export function TaxReports() {
-  const [report] = useState(() => computeQuarterlyTaxReport(PLACEHOLDER_EVENTS));
+  const [report] = useState(() => computeQuarterlyTaxReport(PLACEHOLDER_EVENTS))
 
   function handleExport() {
-    const csv = quarterlyReportToCsv(report);
-    downloadCsv(`heliobond-quarterly-tax-report-${new Date().getFullYear()}.csv`, csv);
+    const csv = quarterlyReportToCsv(report)
+    downloadCsv(`heliobond-quarterly-tax-report-${new Date().getFullYear()}.csv`, csv)
   }
 
   return (
@@ -42,8 +63,8 @@ export function TaxReports() {
       </div>
 
       <p className="text-sm text-[var(--color-muted,#6b7280)]">
-        This is an illustrative summary for record-keeping, not tax advice.
-        Consult a tax professional for your filing.
+        This is an illustrative summary for record-keeping, not tax advice. Consult a tax
+        professional for your filing.
       </p>
 
       <div className="overflow-x-auto rounded-md border">
@@ -62,14 +83,20 @@ export function TaxReports() {
               <tr key={line.quarter}>
                 <td className="border-b px-3 py-2">{line.quarter}</td>
                 <td className="border-b px-3 py-2 text-right">${line.totalDeposits.toFixed(2)}</td>
-                <td className="border-b px-3 py-2 text-right">${line.totalWithdrawals.toFixed(2)}</td>
-                <td className="border-b px-3 py-2 text-right">${line.totalDistributions.toFixed(2)}</td>
-                <td className="border-b px-3 py-2 text-right">${line.realizedGainUSD.toFixed(2)}</td>
+                <td className="border-b px-3 py-2 text-right">
+                  ${line.totalWithdrawals.toFixed(2)}
+                </td>
+                <td className="border-b px-3 py-2 text-right">
+                  ${line.totalDistributions.toFixed(2)}
+                </td>
+                <td className="border-b px-3 py-2 text-right">
+                  ${line.realizedGainUSD.toFixed(2)}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
     </div>
-  );
+  )
 }

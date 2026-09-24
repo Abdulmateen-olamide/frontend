@@ -1,12 +1,12 @@
 /*
  * Bond utilities -- addresses multiple bond-related issues:
-  *  - #364 filter persistence via URL + localStorage
-  *  - #363 case-insensitive search
-  *  - #359 stable sort with tie-breaker
-  *  - #361 bond comparison view data helper
-  *  - #367 projected return from an investment amount + annual yield
-  *  - #portfolio-risk show portfolio risk score based on bond ratings mix
-  *  - #historical-pricing display historical pricing for bonds to show trends
+ *  - #364 filter persistence via URL + localStorage
+ *  - #363 case-insensitive search
+ *  - #359 stable sort with tie-breaker
+ *  - #361 bond comparison view data helper
+ *  - #367 projected return from an investment amount + annual yield
+ *  - #portfolio-risk show portfolio risk score based on bond ratings mix
+ *  - #historical-pricing display historical pricing for bonds to show trends
  */
 
 export interface Bond {
@@ -29,7 +29,7 @@ const YIELD_DEFAULT: [number, number] = [0, 15]
 export function getPersistedYieldRange(): [number, number] {
   if (typeof window === 'undefined') return YIELD_DEFAULT
   try {
-    const url = new URL("window.location.href")
+    const url = new URL('window.location.href')
     const fromUrl = url.searchParams.get('yieldRange')
     if (fromUrl) {
       const [min, max] = fromUrl.split('-').map(Number)
@@ -97,7 +97,7 @@ export function compareBondsMetrics(bonds: Bond[]): Record<string, (string | num
   const metrics = ['yield', 'term', 'rating', 'name'] as const
   const result: Record<string, (string | number)[]> = {}
   for (const m of metrics) {
-    result[m] = bonds.map((b) => (b as any)[m])
+    result[m] = bonds.map((b) => (b as never)[m])
   }
   return result
 }
@@ -150,7 +150,10 @@ export function getPortfolioRisk(bonds: Bond[]): PortfolioRisk {
 // In a real app replace this with an API call to fetch historical bond data.
 export function getBondHistory(bond: Bond, days = 30): BondHistoryPoint[] {
   if (days <= 0) return []
-  const seed = String(bond.id).split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0) || 1
+  const seed =
+    String(bond.id)
+      .split('')
+      .reduce((acc, ch) => acc + ch.charCodeAt(0), 0) || 1
   let s = seed
   const random = () => {
     s = (s * 9301 + 49297) % 233280

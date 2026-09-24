@@ -50,8 +50,30 @@ export function Connect({ onWallet, onNew, onCancel, onBiometric }: ConnectProps
       </div>
 
       {connectionError && (
-        <div role="alert" style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 'var(--radius-input)', background: 'rgba(179,54,27,0.07)', border: '1px solid rgba(179,54,27,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--type-small)', color: 'var(--ember)' }}>{connectionError}</span>
+        <div
+          role="alert"
+          style={{
+            marginBottom: 16,
+            padding: '12px 16px',
+            borderRadius: 'var(--radius-input)',
+            background: 'rgba(179,54,27,0.07)',
+            border: '1px solid rgba(179,54,27,0.18)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: 'var(--type-small)',
+              color: 'var(--ember)',
+            }}
+          >
+            {connectionError}
+          </span>
           <Button variant="secondary" size="sm" onClick={() => void retry()} loading={connecting}>
             Try again
           </Button>

@@ -13,7 +13,11 @@ const TOTAL_LIQUID_BALANCE = '482.00'
 const QUICK_WITHDRAW_AMOUNT_SMALL = 2000
 const QUICK_WITHDRAW_AMOUNT_MEDIUM = 5000
 const QUICK_WITHDRAW_AMOUNT_LARGE = 10000
-const QUICK_WITHDRAW_AMOUNTS = [QUICK_WITHDRAW_AMOUNT_SMALL, QUICK_WITHDRAW_AMOUNT_MEDIUM, QUICK_WITHDRAW_AMOUNT_LARGE]
+const QUICK_WITHDRAW_AMOUNTS = [
+  QUICK_WITHDRAW_AMOUNT_SMALL,
+  QUICK_WITHDRAW_AMOUNT_MEDIUM,
+  QUICK_WITHDRAW_AMOUNT_LARGE,
+]
 const MIN_WITHDRAWAL_AMOUNT = 1
 const DISPLAY_DECIMALS = 2
 
@@ -112,7 +116,13 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
               size="lg"
               style={{ width: '100%', marginTop: 20, background: 'var(--primary)' }}
               disabled={n < MIN_WITHDRAWAL_AMOUNT || n > liquid}
-              reason={n > liquid ? t('reasonExceeds') : n < MIN_WITHDRAWAL_AMOUNT ? t('reasonMin') : undefined}
+              reason={
+                n > liquid
+                  ? t('reasonExceeds')
+                  : n < MIN_WITHDRAWAL_AMOUNT
+                    ? t('reasonMin')
+                    : undefined
+              }
               onClick={async () => {
                 changeStep('pending')
                 setTxError(null)
@@ -146,7 +156,9 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                 }
               }}
             >
-              {n >= MIN_WITHDRAWAL_AMOUNT && n <= liquid ? t('withdrawCta', { amount: n }) : t('withdrawCtaEmpty')}
+              {n >= MIN_WITHDRAWAL_AMOUNT && n <= liquid
+                ? t('withdrawCta', { amount: n })
+                : t('withdrawCtaEmpty')}
             </Button>
             <button
               onClick={onBack}
@@ -252,7 +264,12 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                 />
               </div>
             )}
-            <Button variant="primary" size="lg" style={{ width: '100%', background: 'var(--primary)' }} onClick={onDone}>
+            <Button
+              variant="primary"
+              size="lg"
+              style={{ width: '100%', background: 'var(--primary)' }}
+              onClick={onDone}
+            >
               {t('backToPortfolio')}
             </Button>
           </div>

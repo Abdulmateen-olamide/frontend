@@ -28,35 +28,72 @@ interface PublicKeyCredentialJSON {
   response: Record<string, unknown>
 }
 
-async function postJSON(url: string, body: unknown): Promise<any> {
+interface CredentialDescriptorJSON {
+  id: string
+  type: PublicKeyCredentialType
+  transports?: AuthenticatorTransport[]
+}
+
+interface RegistrationBeginResponse {
+  challenge: string
+  rp: PublicKeyCredentialRpEntity
+  user: {
+    id: string
+    name: string
+    displayName: string
+  }
+  pubKeyCredParams: PublicKeyCredentialParameters[]
+  timeout?: number
+  excludeCredentials?: CredentialDescriptorJSON[]
+  authenticatorSelection?: AuthenticatorSelectionCriteria
+  attestation?: AttestationConveyancePreference
+  extensions?: AuthenticationExtensionsClientInputs
+}
+
+interface LoginBeginResponse {
+  challenge: string
+  timeout?: number
+  rpId?: string
+  allowCredentials?: CredentialDescriptorJSON[]
+  userVerification?: UserVerificationRequirement
+  extensions?: AuthenticationExtensionsClientInputs
+}
+
+async function postJSON<T = unknown>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }))
+    const err = (await res.json().catch(() => ({ error: res.statusText }))) as { error?: string }
     throw new Error(err.error || `HTTP ${res.status}`)
   }
-  return res.json()
+  return res.json() as Promise<T>
 }
 
-export async function registerBiometric(username: string): Promise<any> {
-  const options = await postJSON('/webauthn/register/begin', { username })
+export async function registerBiometric(username: string): Promise<unknown> {
+  const options = await postJSON<RegistrationBeginResponse>('/webauthn/register/begin', {
+    username,
+  })
 
   // Convert base64url fields to ArrayBuffer for WebAuthn API
-  options.challenge = base64urlToArrayBuffer(options.challenge)
-  options.user.id = base64urlToArrayBuffer(options.user.id)
-  if (options.excludeCredentials) {
-    options.excludeCredentials = options.excludeCredentials.map((cred: any) => ({
+  const publicKeyOptions: PublicKeyCredentialCreationOptions = {
+    ...options,
+    challenge: base64urlToArrayBuffer(options.challenge),
+    user: {
+      ...options.user,
+      id: base64urlToArrayBuffer(options.user.id),
+    },
+    excludeCredentials: options.excludeCredentials?.map((cred) => ({
       ...cred,
       id: base64urlToArrayBuffer(cred.id),
-    }))
+    })),
   }
 
   const credential = (await navigator.credentials.create({
-    publicKey: options,
-  })) as PublicKeyCredential & { response: AuthenticatorAttestationResponse }
+    publicKey: publicKeyOptions,
+  })) as (PublicKeyCredential & { response: AuthenticatorAttestationResponse }) | null
 
   if (!credential) throw new Error('Registration canceled')
 
@@ -73,20 +110,21 @@ export async function registerBiometric(username: string): Promise<any> {
   return postJSON('/webauthn/register/complete', { username, credential: credentialJSON })
 }
 
-export async function loginBiometric(username: string): Promise<any> {
-  const options = await postJSON('/webauthn/login/begin', { username })
+export async function loginBiometric(username: string): Promise<unknown> {
+  const options = await postJSON<LoginBeginResponse>('/webauthn/login/begin', { username })
 
-  options.challenge = base64urlToArrayBuffer(options.challenge)
-  if (options.allowCredentials) {
-    options.allowCredentials = options.allowCredentials.map((cred: any) => ({
+  const publicKeyOptions: PublicKeyCredentialRequestOptions = {
+    ...options,
+    challenge: base64urlToArrayBuffer(options.challenge),
+    allowCredentials: options.allowCredentials?.map((cred) => ({
       ...cred,
       id: base64urlToArrayBuffer(cred.id),
-    }))
+    })),
   }
 
   const assertion = (await navigator.credentials.get({
-    publicKey: options,
-  })) as PublicKeyCredential & { response: AuthenticatorAssertionResponse }
+    publicKey: publicKeyOptions,
+  })) as (PublicKeyCredential & { response: AuthenticatorAssertionResponse }) | null
 
   if (!assertion) throw new Error('Authentication canceled')
 

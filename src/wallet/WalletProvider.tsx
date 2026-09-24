@@ -48,7 +48,7 @@ const MAX_AUTO_RETRIES = 2
 const getInitialNetwork = (): 'PUBLIC' | 'TESTNET' =>
   process.env.NEXT_PUBLIC_STELLAR_NETWORK?.toLowerCase() === 'testnet' ? 'TESTNET' : 'PUBLIC'
 
-export function WalletProvider({ children }: {children: ReactNode}) {
+export function WalletProvider({ children }: { children: ReactNode }) {
   const [address, setAddress] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [isDemo, setIsDemo] = useState(false)
@@ -81,6 +81,7 @@ export function WalletProvider({ children }: {children: ReactNode}) {
     try {
       const saved = localStorage.getItem('hb-network')
       if (saved === 'PUBLIC' || saved === 'TESTNET') {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setNetworkState(saved)
       }
     } catch {
@@ -109,6 +110,7 @@ export function WalletProvider({ children }: {children: ReactNode}) {
       /* ignore */
     }
     if (!saved) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRestoring(false)
       return
     }
@@ -129,47 +131,51 @@ export function WalletProvider({ children }: {children: ReactNode}) {
     }
   }, [ensureInit])
 
-  const connectWithRetry = useCallback(async (attempt = 0): Promise<void> => {
-    setConnecting(true)
-    setConnectionError(null)
-    try {
-      await ensureInit()
-      const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('timeout')), CONNECT_TIMEOUT_MS)
-      )
-      const authPromise = StellarWalletsKit.authModal() as Promise<{ address: string }>
-      const { address: addr } = await Promise.race([authPromise, timeoutPromise])
-      let walletId = 'wallet'
+  const connectWithRetry = useCallback(
+    async (attempt = 0): Promise<void> => {
+      setConnecting(true)
+      setConnectionError(null)
       try {
-        walletId = StellarWalletsKit.selectedModule?.productId ?? 'wallet'
-      } catch {
-        /* fallback */
+        await ensureInit()
+        const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), CONNECT_TIMEOUT_MS),
+        )
+        const authPromise = StellarWalletsKit.authModal() as Promise<{ address: string }>
+        const { address: addr } = await Promise.race([authPromise, timeoutPromise])
+        let walletId = 'wallet'
+        try {
+          walletId = StellarWalletsKit.selectedModule?.productId ?? 'wallet'
+        } catch {
+          /* fallback */
+        }
+        setAddress(addr)
+        setIsDemo(false)
+        setRetryCount(0)
+        persist(addr, walletId)
+      } catch (e) {
+        const isTimeout = e instanceof Error && e.message === 'timeout'
+        const isCancelled = e instanceof Error && /dismiss|cancel|closed/i.test(e.message)
+        if (isCancelled) {
+          return
+        }
+        if (isTimeout && attempt < MAX_AUTO_RETRIES) {
+          setRetryCount(attempt + 1)
+          await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)))
+          // eslint-disable-next-line react-hooks/immutability
+          return connectWithRetry(attempt + 1)
+        }
+        setConnectionError(
+          isTimeout
+            ? 'Connection timed out — please check your network and try again.'
+            : 'Could not connect to wallet — please try again.',
+        )
+      } finally {
+        setConnecting(false)
       }
-      setAddress(addr)
-      setIsDemo(false)
-      setRetryCount(0)
-      persist(addr, walletId)
-    } catch (e) {
-      const isTimeout = e instanceof Error && e.message === 'timeout'
-      const isCancelled = e instanceof Error && /dismiss|cancel|closed/i.test(e.message)
-      if (isCancelled) {
-        return
-      }
-      if (isTimeout && attempt < MAX_AUTO_RETRIES) {
-        setRetryCount(attempt + 1)
-        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)))
-        return connectWithRetry(attempt + 1)
-      }
-      setConnectionError(
-        isTimeout
-          ? 'Connection timed out — please check your network and try again.'
-          : 'Could not connect to wallet — please try again.'
-      )
-    } finally {
-      setConnecting(false)
-    }
-  }, [ensureInit, persist])
+    },
+    [ensureInit, persist],
+  )
 
   const connect = useCallback(async () => {
     setRetryCount(0)

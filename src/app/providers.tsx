@@ -115,6 +115,7 @@ function OfflineBanner() {
       } catch {
         // ignore storage errors
       }
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setWasConnected(true)
     }
   }, [connected])

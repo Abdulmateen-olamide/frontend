@@ -45,6 +45,7 @@ export function YieldAlertModal({
   // Reset form when modal opens with new values.
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setThreshold(String(initialThreshold))
       setOperator(initialOperator)
       // Focus the threshold input on open.

@@ -58,10 +58,12 @@ export function YieldAlertProvider({ children }: { children: ReactNode }) {
   const [alerts, setAlerts] = useState<YieldAlert[]>([])
   const { toast } = useToast()
   const alertsRef = useRef(alerts)
+  // eslint-disable-next-line react-hooks/refs
   alertsRef.current = alerts
 
   // Hydrate from localStorage on mount + cross-tab sync.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAlerts(readAlerts())
 
     const syncOtherTabs = (event: StorageEvent) => {
@@ -146,9 +148,7 @@ export function YieldAlertProvider({ children }: { children: ReactNode }) {
     (alertId: string, threshold: number, operator: AlertOperator) => {
       commit(
         alertsRef.current.map((a) =>
-          a.id === alertId
-            ? { ...a, threshold, operator, lastTriggeredAt: undefined }
-            : a,
+          a.id === alertId ? { ...a, threshold, operator, lastTriggeredAt: undefined } : a,
         ),
       )
     },

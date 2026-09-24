@@ -77,7 +77,9 @@ export function StatBlock({
         )}
       </div>
       <div
-        className={stackOnMobile ? 'hb-stat-block-row hb-stat-block-row--stack' : 'hb-stat-block-row'}
+        className={
+          stackOnMobile ? 'hb-stat-block-row hb-stat-block-row--stack' : 'hb-stat-block-row'
+        }
         style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}
       >
         <span
@@ -101,7 +103,11 @@ export function StatBlock({
         </span>
         {delta && (
           <span
-            className={stackOnMobile ? 'hb-stat-block-delta hb-stat-block-delta--stack' : 'hb-stat-block-delta'}
+            className={
+              stackOnMobile
+                ? 'hb-stat-block-delta hb-stat-block-delta--stack'
+                : 'hb-stat-block-delta'
+            }
             style={{
               fontFamily: 'var(--font-data)',
               fontWeight: 'var(--font-weight-semibold)',

@@ -57,14 +57,8 @@ export const ProjectDetail = memo(function ProjectDetail({
   // at every use site.
   const { name: creatorName, since: creatorSince } = detail.creator
   const { credit: creditPoints, green: greenPoints } = detail.scoreHistory
-  const creditHistory = useMemo(
-    () => creditPoints.map((p) => p.value),
-    [creditPoints],
-  )
-  const greenHistory = useMemo(
-    () => greenPoints.map((p) => p.value),
-    [greenPoints],
-  )
+  const creditHistory = useMemo(() => creditPoints.map((p) => p.value), [creditPoints])
+  const greenHistory = useMemo(() => greenPoints.map((p) => p.value), [greenPoints])
   return (
     <main id="main-content" style={{ maxWidth: 860, margin: '0 auto', padding: '40px 24px 96px' }}>
       {onBack && (
@@ -226,27 +220,112 @@ export const ProjectDetail = memo(function ProjectDetail({
         <h2 style={sectionTitle}>{t('pricingTitle')}</h2>
         <div style={cardStyle}>
           <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 240px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-              <Sparkline points={detail.priceHistory.map((p) => p.price)} aria-label={t('priceHistory')} />
-              <span style={{ fontFamily: 'var(--font-data)', fontSize: 'var(--type-data)', fontWeight: 600, color: 'var(--ink)' }}>{detail.priceHistory.length > 0 ? formatMoney(detail.priceHistory[detail.priceHistory.length - 1].price) : '—'}</span>
+            <div
+              style={{
+                flex: '1 1 240px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <Sparkline
+                points={detail.priceHistory.map((p) => p.price)}
+                aria-label={t('priceHistory')}
+              />
+              <span
+                style={{
+                  fontFamily: 'var(--font-data)',
+                  fontSize: 'var(--type-data)',
+                  fontWeight: 600,
+                  color: 'var(--ink)',
+                }}
+              >
+                {detail.priceHistory.length > 0
+                  ? formatMoney(detail.priceHistory[detail.priceHistory.length - 1].price)
+                  : '—'}
+              </span>
               {detail.priceHistory.length > 1 && (
-                <span style={{ fontFamily: 'var(--font-data)', fontSize: 'var(--type-fine)', color: 'var(--ink-40)' }}>
-                  {detail.priceHistory[detail.priceHistory.length - 1].price >= detail.priceHistory[0].price ? '+' : '-'}{formatMoney(Math.abs(detail.priceHistory[detail.priceHistory.length - 1].price - detail.priceHistory[0].price))}
+                <span
+                  style={{
+                    fontFamily: 'var(--font-data)',
+                    fontSize: 'var(--type-fine)',
+                    color: 'var(--ink-40)',
+                  }}
+                >
+                  {detail.priceHistory[detail.priceHistory.length - 1].price >=
+                  detail.priceHistory[0].price
+                    ? '+'
+                    : '-'}
+                  {formatMoney(
+                    Math.abs(
+                      detail.priceHistory[detail.priceHistory.length - 1].price -
+                        detail.priceHistory[0].price,
+                    ),
+                  )}
                 </span>
               )}
-              <span style={{ fontFamily: 'var(--font-data)', fontSize: 'var(--type-fine)', color: 'var(--ink-40)' }}>
+              <span
+                style={{
+                  fontFamily: 'var(--font-data)',
+                  fontSize: 'var(--type-fine)',
+                  color: 'var(--ink-40)',
+                }}
+              >
                 {t('priceLabel')}
               </span>
             </div>
-            <div style={{ flex: '1 1 240px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-              <Sparkline points={detail.priceHistory.map((p) => p.yield)} aria-label={t('yieldHistory')} />
-              <span style={{ fontFamily: 'var(--font-data)', fontSize: 'var(--type-data)', fontWeight: 600, color: 'var(--ink)' }}>{detail.priceHistory.length > 0 ? `${detail.priceHistory[detail.priceHistory.length - 1].yield.toFixed(2)}%` : '—'}</span>
+            <div
+              style={{
+                flex: '1 1 240px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <Sparkline
+                points={detail.priceHistory.map((p) => p.yield)}
+                aria-label={t('yieldHistory')}
+              />
+              <span
+                style={{
+                  fontFamily: 'var(--font-data)',
+                  fontSize: 'var(--type-data)',
+                  fontWeight: 600,
+                  color: 'var(--ink)',
+                }}
+              >
+                {detail.priceHistory.length > 0
+                  ? `${detail.priceHistory[detail.priceHistory.length - 1].yield.toFixed(2)}%`
+                  : '—'}
+              </span>
               {detail.priceHistory.length > 1 && (
-                <span style={{ fontFamily: 'var(--font-data)', fontSize: 'var(--type-fine)', color: 'var(--ink-40)' }}>
-                  {detail.priceHistory[detail.priceHistory.length - 1].yield >= detail.priceHistory[0].yield ? '+' : '-'}{Math.abs(detail.priceHistory[detail.priceHistory.length - 1].yield - detail.priceHistory[0].yield).toFixed(2)}%
+                <span
+                  style={{
+                    fontFamily: 'var(--font-data)',
+                    fontSize: 'var(--type-fine)',
+                    color: 'var(--ink-40)',
+                  }}
+                >
+                  {detail.priceHistory[detail.priceHistory.length - 1].yield >=
+                  detail.priceHistory[0].yield
+                    ? '+'
+                    : '-'}
+                  {Math.abs(
+                    detail.priceHistory[detail.priceHistory.length - 1].yield -
+                      detail.priceHistory[0].yield,
+                  ).toFixed(2)}
+                  %
                 </span>
               )}
-              <span style={{ fontFamily: 'var(--font-data)', fontSize: 'var(--type-fine)', color: 'var(--ink-40)' }}>
+              <span
+                style={{
+                  fontFamily: 'var(--font-data)',
+                  fontSize: 'var(--type-fine)',
+                  color: 'var(--ink-40)',
+                }}
+              >
                 {t('yieldLabel')}
               </span>
             </div>

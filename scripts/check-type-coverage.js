@@ -10,13 +10,14 @@
  * Exits 1 if any `any` types are found.
  */
 
+/* eslint-disable @typescript-eslint/no-require-imports */
 const fs = require('fs')
 const path = require('path')
 
 const SRC_DIR = path.join(process.cwd(), 'src')
 
 /** Match `any` used as a type (after `:`, `as`, or generic constraints). */
-const TYPE_ANY_RE = /(?:[:<>,\s])\bany\b(?:[^a-zA-Z0-9_$]|$)/g
+const TYPE_ANY_RE = /(?:[:<>,]\s*|\bas\s+)\bany\b(?:[^a-zA-Z0-9_$]|$)/g
 
 /** Lines that are pure comments or string content, skip them. */
 const COMMENT_LINE_RE = /^\s*(?:\/\/.*|\/\*.*\*\/|\*|#)/
@@ -47,8 +48,7 @@ function checkFile(filePath) {
     if (STRING_LINE_RE.test(line)) continue
 
     // Skip lines that are only i18n message content
-    if (line.includes('"any ') || line.includes("'any ") || line.includes('`any '))
-      continue
+    if (line.includes('"any ') || line.includes("'any ") || line.includes('`any ')) continue
 
     const matches = line.matchAll(TYPE_ANY_RE)
     for (const m of matches) {

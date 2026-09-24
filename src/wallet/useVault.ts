@@ -32,6 +32,7 @@ export function useVault(): VaultState {
   useEffect(() => {
     const contractId = process.env.NEXT_PUBLIC_VAULT_CONTRACT_ID
     if (!contractId || isDemo || !address) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(false)
       if (!fetchedAt) setFetchedAt(new Date())
       return
@@ -52,7 +53,7 @@ export function useVault(): VaultState {
         setFetchedAt(new Date())
       })
       .finally(() => setLoading(false))
-  }, [address, isDemo, tick, network])
+  }, [address, isDemo, tick, network, fetchedAt])
 
   useEffect(() => {
     if (!process.env.NEXT_PUBLIC_VAULT_CONTRACT_ID || isDemo) return

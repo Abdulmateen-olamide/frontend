@@ -67,7 +67,9 @@ export function TopBar() {
       }
     }
 
-    const handleOnline = () => { void check() }
+    const handleOnline = () => {
+      void check()
+    }
     const handleOffline = () => {
       currentController?.abort()
       if (!cancelled) setNetworkOnline(false)
@@ -76,7 +78,9 @@ export function TopBar() {
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
     void check()
-    const interval = setInterval(() => { void check() }, 15000)
+    const interval = setInterval(() => {
+      void check()
+    }, 15000)
     return () => {
       cancelled = true
       clearInterval(interval)
@@ -124,145 +128,145 @@ export function TopBar() {
 
   return (
     <>
-    <header
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 200,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 28,
-        padding: '0 32px',
-        height: 68,
-        background: 'color-mix(in srgb, var(--canvas) 86%, transparent)',
-        backdropFilter: 'saturate(140%) blur(12px)',
-        WebkitBackdropFilter: 'saturate(140%) blur(12px)',
-        borderBottom: '1px solid var(--ink-12)',
-      }}
-    >
-      <Link
-        href="/"
-        aria-label="Heliobond — home"
-        style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}
-      >
-        {mounted && pathname === '/' ? <Mark /> : null}
-        <span
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontWeight: 700,
-            fontSize: 21,
-            letterSpacing: '-0.01em',
-            color: 'var(--ink)',
-          }}
-        >
-          heliobond
-        </span>
-      </Link>
-
-      <nav className="hb-topbar-nav" style={{ display: 'flex', gap: 4, marginInlineStart: 8 }}>
-        {NAV.map(({ href, key }) => {
-          const active = href.includes('#')
-            ? pathname === '/' && activeHash === href.slice(href.indexOf('#'))
-            : pathname === href
-          return (
-            <Link
-              key={key}
-              href={href}
-              aria-current={active ? 'page' : undefined}
-              style={{
-                textDecoration: 'none',
-                padding: '8px 14px',
-                borderRadius: 'var(--radius-pill)',
-                fontFamily: 'var(--font-body)',
-                fontSize: 14.5,
-                fontWeight: 500,
-                color: active ? 'var(--ink)' : 'var(--ink-60)',
-              }}
-            >
-              {t(key)}
-            </Link>
-          )
-        })}
-      </nav>
-
-      <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <span
-          role="status"
-          aria-label={networkOnline ? t('networkStatus') : 'Offline'}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 7,
-            fontFamily: 'var(--font-data)',
-            fontSize: 12,
-            color: networkOnline ? 'var(--ink-60)' : '#fff',
-            background: networkOnline ? 'transparent' : 'var(--ember)',
-            borderRadius: networkOnline ? 0 : 'var(--radius-pill)',
-            padding: networkOnline ? 0 : '4px 10px',
-          }}
-        >
-          <span
-            aria-hidden="true"
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: networkOnline ? 'var(--growth)' : '#fff',
-              boxShadow: networkOnline ? '0 0 0 3px var(--growth-12)' : 'none',
-            }}
-          />
-          {networkOnline ? t('testnet') : 'Offline'}
-        </span>
-
-        <button
-          type="button"
-          onClick={toggle}
-          aria-label={themeToggleLabel}
-          aria-pressed={mounted ? isDarkTheme : undefined}
-          title={themeToggleLabel}
-          style={iconBtnStyle}
-        >
-          {mounted ? isDarkTheme ? <SunIcon /> : <MoonIcon /> : null}
-        </button>
-
-        <LocaleDropdown />
-
-        {connected && address ? (
-          <WalletMenu address={address} isDemo={isDemo} />
-        ) : (
-          <Button
-            variant="primary"
-            size="md"
-            loading={connecting && networkOnline}
-            onClick={() => router.push('/connect')}
-          >
-            {t('connect')}
-          </Button>
-        )}
-      </div>
-    </header>
-    {!networkOnline && (
-      <div
-        role="alert"
+      <header
         style={{
           position: 'sticky',
-          top: 68,
-          zIndex: 199,
+          top: 0,
+          zIndex: 200,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          gap: 8,
-          padding: '8px 16px',
-          background: 'var(--ember)',
-          color: '#fff',
-          fontFamily: 'var(--font-body)',
-          fontSize: 13,
-          fontWeight: 500,
+          gap: 28,
+          padding: '0 32px',
+          height: 68,
+          background: 'color-mix(in srgb, var(--canvas) 86%, transparent)',
+          backdropFilter: 'saturate(140%) blur(12px)',
+          WebkitBackdropFilter: 'saturate(140%) blur(12px)',
+          borderBottom: '1px solid var(--ink-12)',
         }}
       >
-        Offline — showing cached data
-      </div>
-    )}
+        <Link
+          href="/"
+          aria-label="Heliobond — home"
+          style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}
+        >
+          {mounted && pathname === '/' ? <Mark /> : null}
+          <span
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: 21,
+              letterSpacing: '-0.01em',
+              color: 'var(--ink)',
+            }}
+          >
+            heliobond
+          </span>
+        </Link>
+
+        <nav className="hb-topbar-nav" style={{ display: 'flex', gap: 4, marginInlineStart: 8 }}>
+          {NAV.map(({ href, key }) => {
+            const active = href.includes('#')
+              ? pathname === '/' && activeHash === href.slice(href.indexOf('#'))
+              : pathname === href
+            return (
+              <Link
+                key={key}
+                href={href}
+                aria-current={active ? 'page' : undefined}
+                style={{
+                  textDecoration: 'none',
+                  padding: '8px 14px',
+                  borderRadius: 'var(--radius-pill)',
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 14.5,
+                  fontWeight: 500,
+                  color: active ? 'var(--ink)' : 'var(--ink-60)',
+                }}
+              >
+                {t(key)}
+              </Link>
+            )
+          })}
+        </nav>
+
+        <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span
+            role="status"
+            aria-label={networkOnline ? t('networkStatus') : 'Offline'}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 7,
+              fontFamily: 'var(--font-data)',
+              fontSize: 12,
+              color: networkOnline ? 'var(--ink-60)' : '#fff',
+              background: networkOnline ? 'transparent' : 'var(--ember)',
+              borderRadius: networkOnline ? 0 : 'var(--radius-pill)',
+              padding: networkOnline ? 0 : '4px 10px',
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: networkOnline ? 'var(--growth)' : '#fff',
+                boxShadow: networkOnline ? '0 0 0 3px var(--growth-12)' : 'none',
+              }}
+            />
+            {networkOnline ? t('testnet') : 'Offline'}
+          </span>
+
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label={themeToggleLabel}
+            aria-pressed={mounted ? isDarkTheme : undefined}
+            title={themeToggleLabel}
+            style={iconBtnStyle}
+          >
+            {mounted ? isDarkTheme ? <SunIcon /> : <MoonIcon /> : null}
+          </button>
+
+          <LocaleDropdown />
+
+          {connected && address ? (
+            <WalletMenu address={address} isDemo={isDemo} />
+          ) : (
+            <Button
+              variant="primary"
+              size="md"
+              loading={connecting && networkOnline}
+              onClick={() => router.push('/connect')}
+            >
+              {t('connect')}
+            </Button>
+          )}
+        </div>
+      </header>
+      {!networkOnline && (
+        <div
+          role="alert"
+          style={{
+            position: 'sticky',
+            top: 68,
+            zIndex: 199,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            padding: '8px 16px',
+            background: 'var(--ember)',
+            color: '#fff',
+            fontFamily: 'var(--font-body)',
+            fontSize: 13,
+            fontWeight: 500,
+          }}
+        >
+          Offline — showing cached data
+        </div>
+      )}
     </>
   )
 }
@@ -486,6 +490,7 @@ function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
 
   useEffect(() => {
     if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setConfirming(false)
       if (cancelTimerRef.current) {
         clearTimeout(cancelTimerRef.current)

@@ -20,7 +20,7 @@ export default function GlobalError({
 }) {
   const isOffline = useMemo(
     () => /stellar|offline|network|connection|sync/i.test(error.message ?? ''),
-    [error.message]
+    [error.message],
   )
 
   useEffect(() => {
@@ -55,7 +55,7 @@ export default function GlobalError({
           textTransform: 'uppercase',
         }}
       >
-        {isOffline ? "You're offline" : "Something went wrong"}
+        {isOffline ? "You're offline" : 'Something went wrong'}
       </p>
 
       <h1
@@ -84,7 +84,7 @@ export default function GlobalError({
       >
         {isOffline
           ? "The app couldn't reach the Stellar node. Check your connection or try again. You can still access cached views."
-          : "The application hit an unexpected problem. You can try recovering, or go back to the home page."}
+          : 'The application hit an unexpected problem. You can try recovering, or go back to the home page.'}
       </p>
 
       {error.digest && (
