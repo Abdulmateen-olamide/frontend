@@ -12,6 +12,7 @@
 // back gracefully — no errors surface to the user.
 
 import { selectSharePrice } from '../state/selectors'
+import { validateMemo, validateStellarPayment, type StellarMemoType } from '../lib/stellarPayment'
 
 export interface WithdrawPreview {
   assets: number
@@ -240,6 +241,8 @@ async function waitForTransaction(hash: string): Promise<void> {
  * @param amount  USDC amount (integer stroops internally)
  * @param address Stellar address of the depositor (source account)
  * @param sign    Signing function from WalletProvider
+ * @param signal  Optional AbortSignal
+ * @param memo    Optional Stellar text memo (max 28 bytes)
  * @returns       Transaction hash (real or placeholder)
  */
 export async function submitDeposit(
@@ -247,7 +250,16 @@ export async function submitDeposit(
   address: string,
   sign: (xdr: string) => Promise<string>,
   signal?: AbortSignal,
+  memo?: string,
 ): Promise<string> {
+  // Validate memo length and format before sending to Stellar (#575)
+  if (memo !== undefined && memo !== '') {
+    const memoValidation = validateMemo(memo, 'text')
+    if (!memoValidation.valid) {
+      throw new Error(memoValidation.error || 'Memo is too long (maximum 28 bytes)')
+    }
+  }
+
   if (!CONTRACT_ID) {
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -270,7 +282,7 @@ export async function submitDeposit(
 
   if (offline) throw new Error('Stellar node is offline')
 
-  const { rpc, Contract, TransactionBuilder, Networks, Horizon, nativeToScVal, Transaction } =
+  const { rpc, Contract, TransactionBuilder, Networks, Horizon, nativeToScVal, Transaction, Memo } =
     await import('@stellar/stellar-sdk')
 
   const server = new rpc.Server(RPC_URL, { allowHttp: false })
@@ -287,10 +299,15 @@ export async function submitDeposit(
   const minSharesScVal = nativeToScVal(BigInt(0), { type: 'i128' })
   const networkPassphrase = STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
 
-  const tx = new TransactionBuilder(account, { fee: '100', networkPassphrase })
+  const txBuilder = new TransactionBuilder(account, { fee: '100', networkPassphrase })
     .addOperation(contract.call('deposit', amountScVal, minSharesScVal))
     .setTimeout(180)
-    .build()
+
+  if (memo && memo.trim()) {
+    txBuilder.addMemo(Memo.text(memo.trim()))
+  }
+
+  const tx = txBuilder.build()
 
   const simResult = await withTimeout(
     server.simulateTransaction(tx),
@@ -320,6 +337,8 @@ export async function submitDeposit(
  * @param amount  USDC amount to withdraw
  * @param address Stellar address of the withdrawer
  * @param sign    Signing function from WalletProvider
+ * @param signal  Optional AbortSignal
+ * @param memo    Optional Stellar text memo (max 28 bytes)
  * @returns       Transaction hash (real or placeholder)
  */
 export async function submitWithdraw(
@@ -327,7 +346,16 @@ export async function submitWithdraw(
   address: string,
   sign: (xdr: string) => Promise<string>,
   signal?: AbortSignal,
+  memo?: string,
 ): Promise<string> {
+  // Validate memo length and format before sending to Stellar (#575)
+  if (memo !== undefined && memo !== '') {
+    const memoValidation = validateMemo(memo, 'text')
+    if (!memoValidation.valid) {
+      throw new Error(memoValidation.error || 'Memo is too long (maximum 28 bytes)')
+    }
+  }
+
   if (!CONTRACT_ID) {
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -350,7 +378,7 @@ export async function submitWithdraw(
 
   if (offline) throw new Error('Stellar node is offline')
 
-  const { rpc, Contract, TransactionBuilder, Networks, Horizon, nativeToScVal, Transaction } =
+  const { rpc, Contract, TransactionBuilder, Networks, Horizon, nativeToScVal, Transaction, Memo } =
     await import('@stellar/stellar-sdk')
 
   const server = new rpc.Server(RPC_URL, { allowHttp: false })
@@ -365,10 +393,15 @@ export async function submitWithdraw(
   const minAssetsScVal = nativeToScVal(BigInt(0), { type: 'i128' })
   const networkPassphrase = STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
 
-  const tx = new TransactionBuilder(account, { fee: '100', networkPassphrase })
+  const txBuilder = new TransactionBuilder(account, { fee: '100', networkPassphrase })
     .addOperation(contract.call('withdraw', sharesScVal, minAssetsScVal))
     .setTimeout(180)
-    .build()
+
+  if (memo && memo.trim()) {
+    txBuilder.addMemo(Memo.text(memo.trim()))
+  }
+
+  const tx = txBuilder.build()
 
   const simResult = await withTimeout(
     server.simulateTransaction(tx),
@@ -388,5 +421,91 @@ export async function submitWithdraw(
     throw new Error(`Send failed: ${JSON.stringify(sendResult.errorResult)}`)
 
   await waitForTransaction(sendResult.hash)
+  return sendResult.hash
+}
+
+/**
+ * Validates and submits a direct Stellar payment transaction with memo validation.
+ * Rejects up-front before sending if the memo length or payment parameters are invalid.
+ */
+export async function submitPayment(
+  amount: number,
+  destination: string,
+  sourceAddress: string,
+  sign: (xdr: string) => Promise<string>,
+  options?: {
+    memo?: string
+    memoType?: StellarMemoType
+    signal?: AbortSignal
+  },
+): Promise<string> {
+  const validation = validateStellarPayment({
+    amount,
+    destination,
+    memo: options?.memo,
+    memoType: options?.memoType ?? 'text',
+  })
+
+  if (!validation.valid) {
+    const firstError = Object.values(validation.errors)[0]
+    throw new Error(firstError || 'Invalid payment parameters')
+  }
+
+  if (!CONTRACT_ID) {
+    return new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        resolve(
+          `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`,
+        )
+      }, SIMULATED_DEPOSIT_DELAY_MS)
+      if (options?.signal) {
+        options.signal.addEventListener('abort', () => {
+          clearTimeout(timer)
+          reject(new Error('Aborted'))
+        })
+        if (options.signal.aborted) {
+          clearTimeout(timer)
+          reject(new Error('Aborted'))
+        }
+      }
+    })
+  }
+
+  if (offline) throw new Error('Stellar node is offline')
+
+  const { Horizon, TransactionBuilder, Networks, Operation, Asset, Transaction, Memo } =
+    await import('@stellar/stellar-sdk')
+
+  const horizon = new Horizon.Server(HORIZON_URL)
+  const networkPassphrase = STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
+
+  const account = await withTimeout(
+    horizon.loadAccount(sourceAddress),
+    'Stellar Horizon timed out loading account',
+  )
+
+  const txBuilder = new TransactionBuilder(account, { fee: '100', networkPassphrase })
+    .addOperation(
+      Operation.payment({
+        destination,
+        asset: Asset.native(),
+        amount: amount.toFixed(7),
+      }),
+    )
+    .setTimeout(180)
+
+  if (options?.memo && options.memo.trim()) {
+    txBuilder.addMemo(Memo.text(options.memo.trim()))
+  }
+
+  const tx = txBuilder.build()
+  const signedXdr = await sign(tx.toXDR())
+  const signedTx = new Transaction(signedXdr, networkPassphrase)
+
+  const sendResult = await withTimeout(
+    horizon.submitTransaction(signedTx),
+    'Stellar Horizon timed out submitting transaction',
+  )
+
   return sendResult.hash
 }

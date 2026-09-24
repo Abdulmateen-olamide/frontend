@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useRef, useCallback, type CSSProperties, type ReactNode } from 'react'
 import { useTranslations } from 'next-intl'
-import { Button, AmountInput, useToast } from '../components'
+import { Button, AmountInput, MemoInput, useToast } from '../components'
 import { Helio } from '../brand/Helio'
 import { submitDeposit } from '../wallet/vault'
 import { useVault } from '../wallet/useVault'
 import { scrollToFirstError } from '../lib/scrollToError'
 import { getFriendlyErrorMessage } from '../lib/errorMessages'
+import { validateMemoLength } from '../lib/stellarPayment'
+
 import { useWallet } from '../wallet/WalletProvider'
 import { selectPoolSummary } from '../state/selectors'
 import { roundToCents, formatDecimal, formatSharePrice, parseAmount } from '../lib/format'
@@ -54,12 +56,16 @@ export function Deposit({ onDone }: DepositProps) {
   } = useVault()
   const [step, setStep] = useState<DepositStep>('amount')
   const [amount, setAmount] = useState(DEFAULT_DEPOSIT_USDC)
+  const [memo, setMemo] = useState('')
   const [investmentId, setInvestmentId] = useState<string | null>(null)
   const [txError, setTxError] = useState<string | null>(null)
   const [recurring, setRecurring] = useState(false)
   const [recurrenceDay, setRecurrenceDay] = useState(1)
   const priceFetchedAt = fetchedAt ?? new Date()
   const [now, setNow] = useState(() => Date.now())
+
+  const memoValidation = validateMemoLength(memo)
+  const isMemoValid = memoValidation.valid
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
@@ -86,22 +92,26 @@ export function Deposit({ onDone }: DepositProps) {
     }
   }, [])
 
-  const changeStep = (newStep: DepositStep) => {
-    // auto-scroll to first error when navigating to amount with error
-    if (newStep === 'amount' && txError) {
-      setTimeout(() => scrollToFirstError(document), 100)
-    }
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-      abortControllerRef.current = null
-    }
-    if (mountedRef.current) {
-      setStep(newStep)
-    }
-  }
+  const changeStep = useCallback(
+    (newStep: DepositStep) => {
+      // auto-scroll to first error when navigating to amount with error
+      if (newStep === 'amount' && txError) {
+        setTimeout(() => scrollToFirstError(document), 100)
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+        abortControllerRef.current = null
+      }
+      if (mountedRef.current) {
+        setStep(newStep)
+      }
+    },
+    [txError],
+  )
 
   const handleDone = () => {
     setAmount('')
+    setMemo('')
     setInvestmentId(null)
     setTxError(null)
     changeStep('amount')
@@ -110,6 +120,8 @@ export function Deposit({ onDone }: DepositProps) {
 
   // Consolidate amount parsing with parseAmount helper (#417).
   const n = parseAmount(amount)
+
+  const handleSubmitDepositRef = useRef<(() => Promise<void>) | null>(null)
 
   const handleSubmitDeposit = useCallback(async () => {
     changeStep('pending')
@@ -120,7 +132,7 @@ export function Deposit({ onDone }: DepositProps) {
     try {
       // The tx hash is polled for confirmation inside submitDeposit; nothing
       // on this surface reads it, so we don't bind it.
-      await submitDeposit(n, address ?? '', sign, controller.signal)
+      await submitDeposit(n, address ?? '', sign, controller.signal, memo)
       if (mountedRef.current) {
         clearPending()
         changeStep('success')
@@ -137,7 +149,9 @@ export function Deposit({ onDone }: DepositProps) {
         }
         clearPending()
         const errorMessage =
-          e instanceof Error ? getFriendlyErrorMessage(e.message) : 'Transaction failed — please try again.'
+          e instanceof Error
+            ? getFriendlyErrorMessage(e.message)
+            : 'Transaction failed — please try again.'
         changeStep('amount')
         toast({
           tone: 'error',
@@ -146,7 +160,7 @@ export function Deposit({ onDone }: DepositProps) {
           action: (
             <button
               type="button"
-              onClick={handleSubmitDeposit}
+              onClick={() => handleSubmitDepositRef.current?.()}
               style={{
                 fontFamily: 'var(--font-body)',
                 fontSize: 'var(--type-small)',
@@ -170,7 +184,11 @@ export function Deposit({ onDone }: DepositProps) {
         abortControllerRef.current = null
       }
     }
-  }, [n, address, sign, markPending, clearPending, changeStep, toast])
+  }, [n, address, sign, memo, markPending, clearPending, changeStep, toast])
+
+  useEffect(() => {
+    handleSubmitDepositRef.current = handleSubmitDeposit
+  }, [handleSubmitDeposit])
 
   const price = livePrice
   const balance = USER_BALANCE_USDC
@@ -227,7 +245,11 @@ export function Deposit({ onDone }: DepositProps) {
                         Using estimated rate
                       </span>
                     )}
-                    {t.rich('preview', { shares: formatDecimal(n / price, 4), price: formatSharePrice(price), num })}
+                    {t.rich('preview', {
+                      shares: formatDecimal(n / price, 4),
+                      price: formatSharePrice(price),
+                      num,
+                    })}
                     <span
                       style={{
                         display: 'block',
@@ -277,6 +299,12 @@ export function Deposit({ onDone }: DepositProps) {
               }
             />
             <p style={liqLine}>{t.rich('liquidLine', { b: strong })}</p>
+            <MemoInput
+              value={memo}
+              onChange={setMemo}
+              label={t('memoLabel')}
+              placeholder={t('memoPlaceholder')}
+            />
             <RecurringInvestmentOptions
               enabled={recurring}
               amount={n}
@@ -288,13 +316,24 @@ export function Deposit({ onDone }: DepositProps) {
               variant="primary"
               size="lg"
               style={{ width: '100%', marginTop: 20 }}
-              disabled={n < MIN_DEPOSIT_USDC || n > balance}
+              disabled={n < MIN_DEPOSIT_USDC || n > balance || !isMemoValid}
               reason={
-                n > balance ? t('reasonExceeds') : n < MIN_DEPOSIT_USDC ? t('reasonMin') : undefined
+                n > balance
+                  ? t('reasonExceeds')
+                  : n < MIN_DEPOSIT_USDC
+                    ? t('reasonMin')
+                    : !isMemoValid
+                      ? t('reasonMemoTooLong')
+                      : undefined
               }
               onClick={() => {
                 if (n < MIN_DEPOSIT_USDC || n > balance) {
                   setTxError(n > balance ? 'amount_exceeds_balance' : 'amount_too_low')
+                  setTimeout(() => scrollToFirstError(document), 50)
+                  return
+                }
+                if (!isMemoValid) {
+                  setTxError('memo_too_long')
                   setTimeout(() => scrollToFirstError(document), 50)
                   return
                 }
@@ -334,9 +373,9 @@ export function Deposit({ onDone }: DepositProps) {
                 <span style={{ fontFamily: 'var(--font-data)', fontWeight: 600 }}>
                   {formatDecimal(pendingDeposit.amount, 2)} USDC
                 </span>{' '}
-                (started {Math.floor((Date.now() - pendingDeposit.startedAt) / 1000)}s ago) has not
-                yet confirmed. Submitting again before it settles may result in a duplicate
-                investment. Check your portfolio before proceeding.{' '}
+                (started {Math.floor((now - pendingDeposit.startedAt) / 1000)}s ago) has not yet
+                confirmed. Submitting again before it settles may result in a duplicate investment.
+                Check your portfolio before proceeding.{' '}
                 <button
                   type="button"
                   onClick={clearPending}
@@ -372,7 +411,9 @@ export function Deposit({ onDone }: DepositProps) {
               <Row k={t('rowPrice')} v={formatSharePrice(price)} />
               <Row k="Price fetched" v={priceFetchedAt.toLocaleString()} />
               <Row k={t('rowFee')} v="< $0.01" />
+              {memo && memo.trim() && <Row k={t('rowMemo')} v={memo.trim()} />}
             </div>
+
             <div
               style={{
                 display: 'flex',
@@ -454,12 +495,7 @@ export function Deposit({ onDone }: DepositProps) {
               <Button variant="ghost" onClick={() => changeStep('amount')}>
                 {t('back')}
               </Button>
-              <Button
-                variant="primary"
-                size="lg"
-                style={{ flex: 1 }}
-                onClick={handleSubmitDeposit}
-              >
+              <Button variant="primary" size="lg" style={{ flex: 1 }} onClick={handleSubmitDeposit}>
                 {t('confirm')}
               </Button>
             </div>

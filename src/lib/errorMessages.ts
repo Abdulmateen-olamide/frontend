@@ -15,6 +15,12 @@ const ERROR_CODE_MAP: Record<string, string> = {
   stellar_unreachable: 'Cannot reach Stellar network - showing cached data.',
   simulation_failed: 'Could not estimate the transaction - please try again.',
   tx_failed: 'Transaction did not go through - please try again.',
+  memo_too_long: 'Memo is too long — Stellar text memos must be 28 bytes or fewer.',
+  err_memo_too_long: 'Memo is too long — Stellar text memos must be 28 bytes or fewer.',
+  memo_length_exceeded: 'Memo is too long — Stellar text memos must be 28 bytes or fewer.',
+  invalid_memo: 'Invalid memo — text memos must be 28 bytes or fewer.',
+  tx_malformed: 'Transaction malformed — please check your transaction inputs and memo.',
+  op_malformed: 'Transaction operation malformed — please check your inputs.',
   internal_server_error: 'We are having trouble right now - please try again shortly.',
   server_error: 'We are having trouble right now - please try again shortly.',
   internal_error: 'Something went wrong on our side - please try again.',
@@ -27,42 +33,80 @@ const ERROR_CODE_MAP: Record<string, string> = {
 const FALLBACK_MESSAGE = 'Something went wrong - please try again.'
 
 const STELLAR_UNREACHABLE_MESSAGE = ERROR_CODE_MAP.stellar_unreachable
+const MEMO_TOO_LONG_MESSAGE = ERROR_CODE_MAP.memo_too_long
 
 // Keywords that indicate a network connectivity issue with the Stellar node.
 const NETWORK_ERROR_PATTERNS = [
-  'network', 'socket', 'fetch', 'connection', 'connect',
-  'unreachable', 'refused', 'dns', 'timed out', 'timeout',
-  'ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT', 'EAI_AGAIN',
-  'ECONRESET', 'ENETDOWN', 'ENETUNREACH', 'EHOSTUNREACH',
-  'ERR_NAME_NOT_RESOLVED', 'socket hang up', 'network error',
-  'fetch failed', 'request failed', 'aborted', 'abort',
+  'network',
+  'socket',
+  'fetch',
+  'connection',
+  'connect',
+  'unreachable',
+  'refused',
+  'dns',
+  'timed out',
+  'timeout',
+  'ENOTFOUND',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'EAI_AGAIN',
+  'ECONRESET',
+  'ENETDOWN',
+  'ENETUNREACH',
+  'EHOSTUNREACH',
+  'ERR_NAME_NOT_RESOLVED',
+  'socket hang up',
+  'network error',
+  'fetch failed',
+  'request failed',
+  'aborted',
+  'abort',
 ]
 
+function looksLikeMemoError(message: string): boolean {
+  const lower = message.toLowerCase()
+  return (
+    lower.includes('memo') &&
+    (lower.includes('too long') ||
+      lower.includes('length') ||
+      lower.includes('exceed') ||
+      lower.includes('28') ||
+      lower.includes('byte') ||
+      lower.includes('malformed'))
+  )
+}
+
 function normalizeCode(code: string): string {
-  return code.trim().toLowerCase().replace(/[\\s-]+/g, '_')
+  return code
+    .trim()
+    .toLowerCase()
+    .replace(/[\\s-]+/g, '_')
 }
 
 function extractCodeFromError(error: unknown): string | null {
-  if (!error || typeof error !== 'object') return null;
-  const obj = error as Record<string, any>;
+  if (!error || typeof error !== 'object') return null
+  const obj = error as Record<string, unknown>
   // If it looks like an Axios/Axios-like error with a response
-  if (obj.response) {
-    const status = obj.response.status;
+  if (obj.response && typeof obj.response === 'object') {
+    const resp = obj.response as Record<string, unknown>
+    const status = resp.status
     if (typeof status === 'number' && status >= 500) {
-      return String(status);
+      return String(status)
     }
-    const data = obj.response.data;
+    const data = resp.data
     if (data && typeof data === 'object') {
-      if (typeof data.code === 'string') return data.code;
-      if (typeof data.message === 'string') return data.message;
+      const dataObj = data as Record<string, unknown>
+      if (typeof dataObj.code === 'string') return dataObj.code
+      if (typeof dataObj.message === 'string') return dataObj.message
     } else if (typeof data === 'string' && data.trim()) {
-      return data;
+      return data
     }
-    if (typeof status === 'number') return String(status);
+    if (typeof status === 'number') return String(status)
   }
-  if (typeof obj.code === 'string') return obj.code;
-  if (typeof obj.message === 'string') return obj.message;
-  return null;
+  if (typeof obj.code === 'string') return obj.code
+  if (typeof obj.message === 'string') return obj.message
+  return null
 }
 
 function looksLikeNetworkError(message: string): boolean {
@@ -71,22 +115,27 @@ function looksLikeNetworkError(message: string): boolean {
 }
 
 export function getFriendlyErrorMessage(codeOrMessage: string): string {
-  if (!codeOrMessage) return FALLBACK_MESSAGE;
-  const normalized = normalizeCode(codeOrMessage);
-  if (ERROR_CODE_MAP[normalized]) return ERROR_CODE_MAP[normalized];
+  if (!codeOrMessage) return FALLBACK_MESSAGE
+  const normalized = normalizeCode(codeOrMessage)
+  if (ERROR_CODE_MAP[normalized]) return ERROR_CODE_MAP[normalized]
+
+  // If the error message describes a memo issue, return a clear memo error.
+  if (looksLikeMemoError(codeOrMessage)) {
+    return MEMO_TOO_LONG_MESSAGE
+  }
 
   // If the error looks like a network/connection issue, degrade gracefully.
   if (looksLikeNetworkError(codeOrMessage)) {
-    return STELLAR_UNREACHABLE_MESSAGE;
+    return STELLAR_UNREACHABLE_MESSAGE
   }
 
-  return FALLBACK_MESSAGE;
+  return FALLBACK_MESSAGE
 }
 
 export function parseAndFriendlyError(error: unknown): string {
-  const code = extractCodeFromError(error);
-  if (code) return getFriendlyErrorMessage(code);
-  if (error instanceof Error) return getFriendlyErrorMessage(error.message);
-  if (typeof error === 'string') return getFriendlyErrorMessage(error);
-  return FALLBACK_MESSAGE;
+  const code = extractCodeFromError(error)
+  if (code) return getFriendlyErrorMessage(code)
+  if (error instanceof Error) return getFriendlyErrorMessage(error.message)
+  if (typeof error === 'string') return getFriendlyErrorMessage(error)
+  return FALLBACK_MESSAGE
 }
