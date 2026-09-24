@@ -228,5 +228,22 @@ describe('Vault math functions', () => {
       })
       expect(hash).toBeDefined()
     })
+
+    it('rejects submitPayment when destination address has typos (56 chars, starts with G)', async () => {
+      const { submitPayment } = await import('./vault')
+      const typoAddress = testAddress.slice(0, -1) + 'A'
+      expect(typoAddress.length).toBe(56)
+
+      await expect(submitPayment(50, typoAddress, testAddress, mockSign)).rejects.toThrow(
+        'Invalid Stellar public address checksum (please check for typos)',
+      )
+    })
+
+    it('rejects submitPayment when destination address is malformed', async () => {
+      const { submitPayment } = await import('./vault')
+      await expect(submitPayment(50, 'bad-address', testAddress, mockSign)).rejects.toThrow(
+        'Invalid Stellar public address (must start with G and be 56 characters)',
+      )
+    })
   })
 })

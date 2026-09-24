@@ -12,7 +12,24 @@
 // back gracefully — no errors surface to the user.
 
 import { selectSharePrice } from '../state/selectors'
-import { validateMemo, validateStellarPayment, type StellarMemoType } from '../lib/stellarPayment'
+import {
+  validateMemo,
+  validateStellarPayment,
+  validateStellarAddress,
+  isValidStellarAddress,
+  validatePublicKey,
+  isValidPublicKey,
+  type StellarMemoType,
+  type AddressValidationResult,
+} from '../lib/stellarPayment'
+
+export {
+  validateStellarAddress,
+  isValidStellarAddress,
+  validatePublicKey,
+  isValidPublicKey,
+  type AddressValidationResult,
+}
 
 export interface WithdrawPreview {
   assets: number

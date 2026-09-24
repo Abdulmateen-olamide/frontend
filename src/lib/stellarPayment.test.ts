@@ -4,6 +4,10 @@ import {
   validateMemoLength,
   validateMemo,
   validateStellarPayment,
+  validateStellarAddress,
+  isValidStellarAddress,
+  validatePublicKey,
+  isValidPublicKey,
   STELLAR_MAX_MEMO_TEXT_BYTES,
   STELLAR_MAX_MEMO_ID,
 } from './stellarPayment'
@@ -212,6 +216,100 @@ describe('Stellar memo validation', () => {
       })
       expect(result.valid).toBe(false)
       expect(result.errors.destination).toContain('Invalid Stellar public address')
+    })
+
+    it('rejects payment destination address with typos (56 chars starting with G)', () => {
+      // 56-char base32 string starting with G, but invalid checksum due to typo
+      const typoAddress = validAddress.slice(0, -1) + 'A'
+      expect(typoAddress.length).toBe(56)
+      expect(typoAddress.startsWith('G')).toBe(true)
+
+      const result = validateStellarPayment({
+        amount: 50,
+        destination: typoAddress,
+      })
+      expect(result.valid).toBe(false)
+      expect(result.errors.destination).toContain('Invalid Stellar public address checksum')
+    })
+  })
+
+  describe('Stellar public key / address validation', () => {
+    const validAddress1 = 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H'
+    const validAddress2 = 'GCMRTJ2F7U4THN6VWWNA5GO6WLPPBY6NI5SFBQKLPKTZHY7KPVX6M7MT'
+
+    it('accepts valid Stellar public addresses', () => {
+      expect(validateStellarAddress(validAddress1).valid).toBe(true)
+      expect(isValidStellarAddress(validAddress1)).toBe(true)
+      expect(isValidPublicKey(validAddress1)).toBe(true)
+      expect(validatePublicKey(validAddress1).valid).toBe(true)
+
+      expect(validateStellarAddress(validAddress2).valid).toBe(true)
+      expect(isValidStellarAddress(validAddress2)).toBe(true)
+    })
+
+    it('accepts address with surrounding whitespace by trimming', () => {
+      const padded = `   ${validAddress1}   `
+      expect(validateStellarAddress(padded).valid).toBe(true)
+      expect(isValidStellarAddress(padded)).toBe(true)
+    })
+
+    it('catches typos in 56-character addresses that start with G', () => {
+      // Modifying the last character
+      const typoLastChar = validAddress1.slice(0, -1) + 'A'
+      expect(typoLastChar.length).toBe(56)
+      expect(typoLastChar.startsWith('G')).toBe(true)
+
+      const resLast = validateStellarAddress(typoLastChar)
+      expect(resLast.valid).toBe(false)
+      expect(resLast.error).toContain('Invalid Stellar public address checksum')
+      expect(isValidStellarAddress(typoLastChar)).toBe(false)
+
+      // Modifying a middle character
+      const typoMidChar =
+        validAddress1.slice(0, 20) +
+        (validAddress1[20] === 'A' ? 'B' : 'A') +
+        validAddress1.slice(21)
+      expect(typoMidChar.length).toBe(56)
+      expect(typoMidChar.startsWith('G')).toBe(true)
+
+      const resMid = validateStellarAddress(typoMidChar)
+      expect(resMid.valid).toBe(false)
+      expect(resMid.error).toContain('Invalid Stellar public address checksum')
+      expect(isValidStellarAddress(typoMidChar)).toBe(false)
+    })
+
+    it('rejects addresses with invalid length', () => {
+      expect(validateStellarAddress('G123').valid).toBe(false)
+      expect(validateStellarAddress(validAddress1 + 'A').valid).toBe(false)
+      expect(isValidStellarAddress('G123')).toBe(false)
+    })
+
+    it('rejects addresses that do not start with G', () => {
+      // Secret seed starting with S
+      const secretSeed = 'SBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H'
+      expect(validateStellarAddress(secretSeed).valid).toBe(false)
+      expect(isValidStellarAddress(secretSeed)).toBe(false)
+
+      // Contract address starting with C
+      const contract = 'CA3D5KRYM6CB7OWQ6TWYRR3Z4T7GNZLKERYNZGGA5SOAOPIFY6YQGAXE'
+      expect(validateStellarAddress(contract).valid).toBe(false)
+      expect(isValidStellarAddress(contract)).toBe(false)
+    })
+
+    it('rejects addresses with invalid base32 characters', () => {
+      // '0', '1', '8', '9' are not in RFC 4648 base32
+      const invalidChars = 'GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX01'
+      expect(validateStellarAddress(invalidChars).valid).toBe(false)
+      expect(isValidStellarAddress(invalidChars)).toBe(false)
+    })
+
+    it('rejects empty, null, or undefined values with clear error', () => {
+      expect(validateStellarAddress('').valid).toBe(false)
+      expect(validateStellarAddress('   ').valid).toBe(false)
+      expect(validateStellarAddress(null).valid).toBe(false)
+      expect(validateStellarAddress(undefined).valid).toBe(false)
+      expect(isValidStellarAddress(null)).toBe(false)
+      expect(isValidStellarAddress('')).toBe(false)
     })
   })
 })
