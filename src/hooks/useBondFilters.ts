@@ -9,8 +9,8 @@ import {
 } from '@/lib/bondUtils'
 
 export function useBondFilters() {
-  const [yieldRange, setYieldRangeState] = useState<[number, number]>([0, 15])
-  const [sortOrder, setSortOrderState] = useState<SortDirection>('asc')
+  const [yieldRange, setYieldRangeState] = useState<[number, number]>(getPersistedYieldRange)
+  const [sortOrder, setSortOrderState] = useState<SortDirection>(getPersistedSortOrder)
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -28,19 +28,23 @@ export function useBondFilters() {
     persistSortOrder(direction)
   }, [])
 
-  // Persist across tab switches via storage event
+  // Persist across tab switches, history navigation (popstate), and bfcache restores (pageshow)
   useEffect(() => {
     const handler = () => {
       setYieldRangeState(getPersistedYieldRange())
       setSortOrderState(getPersistedSortOrder())
     }
     window.addEventListener('storage', handler)
+    window.addEventListener('popstate', handler)
+    window.addEventListener('pageshow', handler)
     const onVisibility = () => {
       if (document.visibilityState === 'visible') handler()
     }
     document.addEventListener('visibilitychange', onVisibility)
     return () => {
       window.removeEventListener('storage', handler)
+      window.removeEventListener('popstate', handler)
+      window.removeEventListener('pageshow', handler)
       document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [])

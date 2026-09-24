@@ -47,14 +47,58 @@ describe('useBondFilters', () => {
     expect(window.location.search).toContain('sortOrder=desc')
   })
 
-  it('syncs across storage events (tab switches)', () => {
+  it('updates yieldRange and persists to URL and storage', () => {
     const { result } = renderHook(() => useBondFilters())
-    expect(result.current.sortOrder).toBe('asc')
+    act(() => {
+      result.current.setYieldRange([4, 10])
+    })
+    expect(result.current.yieldRange).toEqual([4, 10])
+    expect(window.location.search).toContain('yieldRange=4-10')
+    expect(localStorage.getItem('bond_yield_filter')).toBe(JSON.stringify([4, 10]))
+  })
+
+  it('syncs yieldRange across storage events (tab switches)', () => {
+    const { result } = renderHook(() => useBondFilters())
+    expect(result.current.yieldRange).toEqual([0, 15])
 
     act(() => {
-      localStorage.setItem('bond_sort_order', 'desc')
+      localStorage.setItem('bond_yield_filter', JSON.stringify([3, 11]))
       window.dispatchEvent(new Event('storage'))
     })
+    expect(result.current.yieldRange).toEqual([3, 11])
+  })
+
+  it('retains filter state when navigating away and back (unmount and remount)', () => {
+    const { result, unmount } = renderHook(() => useBondFilters())
+    act(() => {
+      result.current.setYieldRange([5, 12])
+    })
+    expect(result.current.yieldRange).toEqual([5, 12])
+
+    // User clicks on a bond, navigating away
+    unmount()
+    window.history.pushState(null, '', 'http://localhost:3000/bonds/123')
+
+    // User goes back to portfolio list
+    window.history.replaceState(null, '', 'http://localhost:3000/portfolio')
+    const { result: remounted } = renderHook(() => useBondFilters())
+    expect(remounted.current.yieldRange).toEqual([5, 12])
+  })
+
+  it('syncs filter state on popstate event (browser back/forward navigation)', () => {
+    const { result } = renderHook(() => useBondFilters())
+    expect(result.current.yieldRange).toEqual([0, 15])
+
+    act(() => {
+      window.history.replaceState(
+        null,
+        '',
+        'http://localhost:3000/portfolio?yieldRange=6-14&sortOrder=desc',
+      )
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+
+    expect(result.current.yieldRange).toEqual([6, 14])
     expect(result.current.sortOrder).toBe('desc')
   })
 })
