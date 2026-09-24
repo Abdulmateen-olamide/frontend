@@ -26,10 +26,15 @@ export interface BondHistoryPoint {
 const YIELD_FILTER_KEY = 'bond_yield_filter'
 const YIELD_DEFAULT: [number, number] = [0, 15]
 
+export type SortDirection = 'asc' | 'desc'
+
+const SORT_ORDER_KEY = 'bond_sort_order'
+const SORT_DEFAULT: SortDirection = 'asc'
+
 export function getPersistedYieldRange(): [number, number] {
   if (typeof window === 'undefined') return YIELD_DEFAULT
   try {
-    const url = new URL('window.location.href')
+    const url = new URL(window.location.href)
     const fromUrl = url.searchParams.get('yieldRange')
     if (fromUrl) {
       const [min, max] = fromUrl.split('-').map(Number)
@@ -53,6 +58,35 @@ export function persistYieldRange(range: [number, number]): void {
     window.history.replaceState(null, '', url.toString())
   } catch {}
 }
+
+export function getPersistedSortOrder(): SortDirection {
+  if (typeof window === 'undefined') return SORT_DEFAULT
+  try {
+    const url = new URL(window.location.href)
+    const fromUrl =
+      url.searchParams.get('sortOrder') ||
+      url.searchParams.get('sortDir') ||
+      url.searchParams.get('sort') ||
+      url.searchParams.get('direction')
+    if (fromUrl === 'asc' || fromUrl === 'desc') return fromUrl
+    const stored = localStorage.getItem(SORT_ORDER_KEY)
+    if (stored === 'asc' || stored === 'desc') return stored
+  } catch {}
+  return SORT_DEFAULT
+}
+
+export function persistSortOrder(direction: SortDirection): void {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(SORT_ORDER_KEY, direction)
+    const url = new URL(window.location.href)
+    url.searchParams.set('sortOrder', direction)
+    window.history.replaceState(null, '', url.toString())
+  } catch {}
+}
+
+export const getPersistedSortDirection = getPersistedSortOrder
+export const persistSortDirection = persistSortOrder
 
 export function filterBondsByYield(bonds: Bond[], range: [number, number]): Bond[] {
   const [min, max] = range
