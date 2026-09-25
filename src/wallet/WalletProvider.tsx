@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { STELLAR_NETWORK_UPPERCASE } from '../config/network'
 
 interface WalletContextValue {
   address: string | null
@@ -45,8 +46,7 @@ const DEMO_ADDRESS = 'GBQHWXVZ2K4M6N8P3R5T7W9YA2C4E6G8J3L5Q7S9U2X4Z6B8D1F3H59XQ'
 const CONNECT_TIMEOUT_MS = 15000
 const MAX_AUTO_RETRIES = 2
 
-const getInitialNetwork = (): 'PUBLIC' | 'TESTNET' =>
-  process.env.NEXT_PUBLIC_STELLAR_NETWORK?.toLowerCase() === 'testnet' ? 'TESTNET' : 'PUBLIC'
+const getInitialNetwork = (): 'PUBLIC' | 'TESTNET' => STELLAR_NETWORK_UPPERCASE
 
 export function WalletProvider({ children }: {children: ReactNode}) {
   const [address, setAddress] = useState<string | null>(null)

@@ -12,11 +12,41 @@
 // back gracefully — no errors surface to the user.
 
 import { selectSharePrice } from '../state/selectors'
+import {
+  STELLAR_NETWORK,
+  SOROBAN_RPC_URL as RPC_URL,
+  HORIZON_URL,
+} from '../config/network'
 
 export interface WithdrawPreview {
   assets: number
   sharePrice: number
   networkFee: number
+}
+
+export interface WithdrawResult {
+  hash: string
+  queued: boolean
+  position?: number
+  estimatedAmount?: number
+  toString(): string
+}
+
+export function createWithdrawResult(
+  hash: string,
+  queued: boolean,
+  position?: number,
+  estimatedAmount?: number,
+): WithdrawResult {
+  return {
+    hash,
+    queued,
+    position,
+    estimatedAmount,
+    toString() {
+      return this.hash
+    },
+  }
 }
 /** total_assets / total_supply. Constant in the mock; a live read on-chain. */
 export const SHARE_PRICE = selectSharePrice()
@@ -69,17 +99,6 @@ export const vault = {
 // ---------------------------------------------------------------------------
 
 const CONTRACT_ID = process.env.NEXT_PUBLIC_VAULT_CONTRACT_ID
-const STELLAR_NETWORK = process.env.NEXT_PUBLIC_STELLAR_NETWORK ?? 'public'
-const RPC_URL =
-  process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ??
-  (STELLAR_NETWORK === 'public'
-    ? 'https://soroban.stellar.org'
-    : 'https://soroban-testnet.stellar.org')
-const HORIZON_URL =
-  process.env.NEXT_PUBLIC_HORIZON_URL ??
-  (STELLAR_NETWORK === 'public'
-    ? 'https://horizon.stellar.org'
-    : 'https://horizon-testnet.stellar.org')
 
 /** Max time to wait for a Stellar RPC/Horizon response before treating it as offline. */
 const RPC_TIMEOUT_MS = 5000
@@ -205,6 +224,25 @@ export async function fetchTotalAssets(
   }
 }
 
+/**
+ * Read vault utilization in basis points (10000 = 100%).
+ * Returns 0 when not available.
+ */
+export async function fetchUtilizationBps(
+  sourceAddress: string,
+  network = STELLAR_NETWORK,
+): Promise<number> {
+  if (!CONTRACT_ID) return 0
+  if (offline) return 0
+  const { scValToNative } = await import('@stellar/stellar-sdk')
+  try {
+    const retval = await sorobanSimulate(sourceAddress, 'get_utilization_bps', [], network)
+    return Number(scValToNative(retval))
+  } catch {
+    return 0
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Transaction helpers
 // ---------------------------------------------------------------------------
@@ -212,8 +250,14 @@ export async function fetchTotalAssets(
 /** Seconds to poll getTransaction before giving up */
 const TX_POLL_TIMEOUT_S = 30
 
+export interface TransactionConfirmation {
+  status: string
+  resultMetaXdr?: string
+  returnValue?: unknown
+}
+
 /** Poll until a submitted transaction reaches a terminal status. */
-async function waitForTransaction(hash: string): Promise<void> {
+async function waitForTransaction(hash: string): Promise<TransactionConfirmation> {
   const { rpc } = await import('@stellar/stellar-sdk')
   const server = new rpc.Server(RPC_URL, { allowHttp: false })
   const deadline = Date.now() + TX_POLL_TIMEOUT_S * 1000
@@ -224,11 +268,13 @@ async function waitForTransaction(hash: string): Promise<void> {
       server.getTransaction(hash),
       'Stellar RPC timed out while polling transaction status',
     )
-    if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) return
+    if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) {
+      return result as unknown as TransactionConfirmation
+    }
     if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
       throw new Error('Transaction failed on-chain')
     }
-    // NOT_FOUND means still pending — keep polling
+    // NOT_FOUND means still pending, keep polling
   }
   throw new Error('Transaction confirmation timed out')
 }
@@ -315,25 +361,27 @@ export async function submitDeposit(
 
 /**
  * Build, sign, and submit a withdraw transaction.
- * In demo mode (CONTRACT_ID not set): waits 2 s then returns a placeholder hash.
+ * Reads events after confirmation to detect queued withdrawals (WithdrawQueued).
+ * In demo mode (CONTRACT_ID not set): returns a WithdrawResult with demo hash.
+ * If amount exceeds liquid share (236), enqueues the withdrawal.
  *
  * @param amount  USDC amount to withdraw
  * @param address Stellar address of the withdrawer
  * @param sign    Signing function from WalletProvider
- * @returns       Transaction hash (real or placeholder)
+ * @returns       WithdrawResult with hash and queued status
  */
 export async function submitWithdraw(
   amount: number,
   address: string,
   sign: (xdr: string) => Promise<string>,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<WithdrawResult> {
   if (!CONTRACT_ID) {
-    return new Promise<string>((resolve, reject) => {
+    return new Promise<WithdrawResult>((resolve, reject) => {
       const timer = setTimeout(() => {
-        resolve(
-          `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`,
-        )
+        const demoHash = `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`
+        const isQueued = amount > 236
+        resolve(createWithdrawResult(demoHash, isQueued, isQueued ? 1 : undefined, amount))
       }, SIMULATED_WITHDRAW_DELAY_MS)
       if (signal) {
         signal.addEventListener('abort', () => {
@@ -350,7 +398,7 @@ export async function submitWithdraw(
 
   if (offline) throw new Error('Stellar node is offline')
 
-  const { rpc, Contract, TransactionBuilder, Networks, Horizon, nativeToScVal, Transaction } =
+  const { rpc, Contract, TransactionBuilder, Networks, Horizon, nativeToScVal, Transaction, xdr, scValToNative } =
     await import('@stellar/stellar-sdk')
 
   const server = new rpc.Server(RPC_URL, { allowHttp: false })
@@ -374,6 +422,216 @@ export async function submitWithdraw(
     server.simulateTransaction(tx),
     'Stellar RPC timed out during simulation',
   )
+  if ('error' in simResult) throw new Error(`Simulation failed: ${simResult.error}`)
+
+  const assembled = rpc.assembleTransaction(tx, simResult).build()
+  const signedXdr = await sign(assembled.toXDR())
+  const signedTx = new Transaction(signedXdr, networkPassphrase)
+
+  const sendResult = await withTimeout(
+    server.sendTransaction(signedTx),
+    'Stellar RPC timed out submitting transaction',
+  )
+  if (sendResult.status === 'ERROR')
+    throw new Error(`Send failed: ${JSON.stringify(sendResult.errorResult)}`)
+
+  const conf = await waitForTransaction(sendResult.hash)
+  let queued = false
+  let position: number | undefined
+  let estimatedAmount = amount
+
+  const inspectEvent = (rawEvt: unknown) => {
+    try {
+      const anyEvt = rawEvt as {
+        event?: () => unknown
+        body?: () => {
+          v0?: () => {
+            topics?: () => unknown[]
+            data?: () => unknown
+          }
+        }
+      }
+      const contractEvt = (typeof anyEvt.event === 'function' ? anyEvt.event() : anyEvt) as {
+        body?: () => {
+          v0?: () => {
+            topics?: () => unknown[]
+            data?: () => unknown
+          }
+        }
+      }
+      const body = typeof contractEvt.body === 'function' ? contractEvt.body() : undefined
+      const v0 = typeof body?.v0 === 'function' ? body.v0() : undefined
+      if (!v0) return
+
+      const topics = typeof v0.topics === 'function' ? v0.topics() ?? [] : []
+      const topicStrs = topics.map((t) => {
+        try {
+          return String(scValToNative(t as Parameters<typeof scValToNative>[0]))
+        } catch {
+          return ''
+        }
+      })
+
+      if (
+        topicStrs.some((s) => {
+          const lower = s.toLowerCase()
+          return lower.includes('withdrawqueued') || lower.includes('withdraw_queued')
+        })
+      ) {
+        queued = true
+        try {
+          const dataVal = typeof v0.data === 'function' ? v0.data() : undefined
+          if (!dataVal) return
+          const rawData = scValToNative(dataVal as Parameters<typeof scValToNative>[0])
+          if (rawData && typeof rawData === 'object') {
+            const record = rawData as Record<string, unknown>
+            if ('position' in record) position = Number(record.position)
+            if ('amount' in record) estimatedAmount = Number(record.amount) / 1e7
+          } else if (typeof rawData === 'bigint' || typeof rawData === 'number') {
+            position = Number(rawData)
+          }
+        } catch {
+          /* ignore payload parse error */
+        }
+      }
+    } catch {
+      /* ignore event inspect error */
+    }
+  }
+
+  const anyConf = conf as unknown as {
+    resultMetaXdr?: unknown
+    returnValue?: unknown
+    diagnosticEventsXdr?: unknown[]
+    events?: { contractEventsXdr?: unknown[][] }
+  }
+
+  // 1. Inspect contract events array from RPC response
+  if (anyConf.events?.contractEventsXdr && Array.isArray(anyConf.events.contractEventsXdr)) {
+    for (const group of anyConf.events.contractEventsXdr) {
+      if (Array.isArray(group)) {
+        for (const evt of group) inspectEvent(evt)
+      }
+    }
+  }
+
+  // 2. Inspect diagnostic events
+  if (anyConf.diagnosticEventsXdr && Array.isArray(anyConf.diagnosticEventsXdr)) {
+    for (const diag of anyConf.diagnosticEventsXdr) inspectEvent(diag)
+  }
+
+  // 3. Inspect resultMetaXdr (both parsed object and base64 string)
+  if (anyConf.resultMetaXdr) {
+    try {
+      let meta: unknown = anyConf.resultMetaXdr
+      if (typeof meta === 'string') {
+        meta = xdr.TransactionMeta.fromXDR(meta, 'base64')
+      }
+      const typedMeta = meta as {
+        v3?: () => { sorobanMeta?: () => { events?: () => unknown[] } }
+        switch?: () => number
+        value?: () => { sorobanMeta?: () => { events?: () => unknown[] } }
+      }
+      const v3 = typedMeta.v3?.() || (typedMeta.switch?.() === 3 || typedMeta.switch?.() === 4 ? typedMeta.value?.() : null)
+      const events = v3?.sorobanMeta?.()?.events?.() ?? []
+      for (const evt of events) inspectEvent(evt)
+    } catch {
+      /* ignore meta parse error */
+    }
+  }
+
+  // 4. Inspect return value if contract returns QueuedClaim struct or status
+  if (anyConf.returnValue) {
+    try {
+      const ret = scValToNative(anyConf.returnValue as Parameters<typeof scValToNative>[0])
+      if (ret && typeof ret === 'object') {
+        const record = ret as Record<string, unknown>
+        if ('queued' in record && Boolean(record.queued)) queued = true
+        if ('position' in record) position = Number(record.position)
+        if ('amount' in record) estimatedAmount = Number(record.amount) / 1e7
+      }
+    } catch {
+      /* ignore return value parse error */
+    }
+  }
+
+  return createWithdrawResult(sendResult.hash, queued, position ?? (queued ? 1 : undefined), estimatedAmount)
+}
+
+/**
+ * Call permissionless claim() on the InvestmentVault to pay out queued withdrawals.
+ */
+export async function submitClaim(
+  address: string,
+  sign: (xdr: string) => Promise<string>,
+  signal?: AbortSignal,
+): Promise<string> {
+  if (!CONTRACT_ID) {
+    return new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        resolve(
+          `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`,
+        )
+      }, 1500)
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          clearTimeout(timer)
+          reject(new Error('Aborted'))
+        })
+        if (signal.aborted) {
+          clearTimeout(timer)
+          reject(new Error('Aborted'))
+        }
+      }
+    })
+  }
+
+  if (offline) throw new Error('Stellar node is offline')
+
+  const { rpc, Contract, TransactionBuilder, Networks, Horizon, Transaction, Address } =
+    await import('@stellar/stellar-sdk')
+
+  const server = new rpc.Server(RPC_URL, { allowHttp: false })
+  const horizon = new Horizon.Server(HORIZON_URL)
+  const contract = new Contract(CONTRACT_ID)
+
+  const account = await withTimeout(
+    horizon.loadAccount(address),
+    'Stellar Horizon timed out loading account',
+  )
+  const networkPassphrase = STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
+
+  let tx = new TransactionBuilder(account, { fee: '100', networkPassphrase })
+    .addOperation(contract.call('claim'))
+    .setTimeout(180)
+    .build()
+
+  let simResult = await withTimeout(
+    server.simulateTransaction(tx),
+    'Stellar RPC timed out during simulation',
+  )
+
+  // If parameterless claim() fails simulation, try passing claimant address
+  if ('error' in simResult) {
+    try {
+      const userScVal = new Address(address).toScVal()
+      const fallbackTx = new TransactionBuilder(account, { fee: '100', networkPassphrase })
+        .addOperation(contract.call('claim', userScVal))
+        .setTimeout(180)
+        .build()
+      const fallbackSim = await withTimeout(
+        server.simulateTransaction(fallbackTx),
+        'Stellar RPC timed out during simulation',
+      )
+      if (!('error' in fallbackSim)) {
+        tx = fallbackTx
+        simResult = fallbackSim
+      }
+    } catch {
+      /* ignore fallback error and report original error */
+    }
+  }
+
   if ('error' in simResult) throw new Error(`Simulation failed: ${simResult.error}`)
 
   const assembled = rpc.assembleTransaction(tx, simResult).build()
