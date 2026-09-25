@@ -6,6 +6,7 @@ import { Button, AmountInput, LiquidityMeter, AddressChip, useToast } from '../c
 import { submitWithdraw } from '../wallet/vault'
 import { useWallet } from '../wallet/WalletProvider'
 import { formatDecimal, parseAmount } from '../lib/format'
+import { addPendingClaim } from '../wallet/pendingClaims'
 
 const LIQUID_SHARE = 236
 const TOTAL_LIQUID = 482
@@ -38,6 +39,9 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
   const [amount, setAmount] = useState('')
   const [txHash, setTxHash] = useState<string | null>(null)
   const [txError, setTxError] = useState<string | null>(null)
+  const [isQueued, setIsQueued] = useState(false)
+  const [queuePosition, setQueuePosition] = useState<number | null>(null)
+  const [estimatedAmount, setEstimatedAmount] = useState<number | null>(null)
 
   const mountedRef = useRef(true)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -107,27 +111,85 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
               maxChipLabel={t('maxChip')}
               capActionLabel={t('withdrawMaxAvailable')}
             />
+            {n > liquid && n <= TOTAL_LIQUID && (
+              <div
+                role="status"
+                style={{
+                  marginTop: 14,
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-input)',
+                  background: 'rgba(234, 179, 8, 0.1)',
+                  border: '1px solid rgba(234, 179, 8, 0.3)',
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--type-small)',
+                  color: 'var(--ink)',
+                }}
+              >
+                <strong>Warning:</strong> Requested amount exceeds immediately available liquid balance (${liquid}.00). Your withdrawal will be placed in the FIFO queue (WithdrawQueued) and will be claimable once vault liquidity is replenished.
+              </div>
+            )}
+            {n > TOTAL_LIQUID && (
+              <div
+                role="alert"
+                style={{
+                  marginTop: 14,
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-input)',
+                  background: 'rgba(179,54,27,0.07)',
+                  border: '1px solid rgba(179,54,27,0.18)',
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--type-small)',
+                  color: 'var(--ember)',
+                }}
+              >
+                Amount exceeds maximum graduated tier limit (${TOTAL_LIQUID}.00).
+              </div>
+            )}
             <Button
               variant="primary"
               size="lg"
               style={{ width: '100%', marginTop: 20, background: 'var(--primary)' }}
-              disabled={n < MIN_WITHDRAWAL_AMOUNT || n > liquid}
-              reason={n > liquid ? t('reasonExceeds') : n < MIN_WITHDRAWAL_AMOUNT ? t('reasonMin') : undefined}
+              disabled={n < MIN_WITHDRAWAL_AMOUNT || n > TOTAL_LIQUID}
+              reason={n > TOTAL_LIQUID ? 'Amount exceeds pool limit' : n < MIN_WITHDRAWAL_AMOUNT ? t('reasonMin') : undefined}
               onClick={async () => {
                 changeStep('pending')
                 setTxError(null)
                 const controller = new AbortController()
                 abortControllerRef.current = controller
                 try {
-                  const hash = await submitWithdraw(n, address ?? '', sign, controller.signal)
+                  const result = await submitWithdraw(n, address ?? '', sign, controller.signal)
                   if (mountedRef.current) {
+                    const hash = typeof result === 'string' ? result : result.hash
+                    const queued = typeof result === 'object' ? Boolean(result.queued) : false
+                    const position = typeof result === 'object' && result.position ? result.position : 1
+                    const est = typeof result === 'object' && result.estimatedAmount ? result.estimatedAmount : n
                     setTxHash(hash)
+                    setIsQueued(queued)
+                    setQueuePosition(position)
+                    setEstimatedAmount(est)
                     changeStep('success')
-                    toast({
-                      tone: 'success',
-                      title: 'Withdrawal settled',
-                      message: `${formatDecimal(n, DISPLAY_DECIMALS)} USDC is on its way to your wallet.`,
-                    })
+
+                    if (queued) {
+                      addPendingClaim({
+                        id: hash,
+                        hash,
+                        amount: est,
+                        position,
+                        timestamp: Date.now(),
+                        address: address ?? undefined,
+                      })
+                      toast({
+                        tone: 'solar',
+                        title: 'Withdrawal queued',
+                        message: `Position #${position}. Est. ${formatDecimal(est, DISPLAY_DECIMALS)} USDC queued for payout.`,
+                      })
+                    } else {
+                      toast({
+                        tone: 'success',
+                        title: 'Withdrawal settled',
+                        message: `${formatDecimal(n, DISPLAY_DECIMALS)} USDC is on its way to your wallet.`,
+                      })
+                    }
                   }
                 } catch (e) {
                   if (mountedRef.current) {
@@ -146,7 +208,11 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                 }
               }}
             >
-              {n >= MIN_WITHDRAWAL_AMOUNT && n <= liquid ? t('withdrawCta', { amount: n }) : t('withdrawCtaEmpty')}
+              {n >= MIN_WITHDRAWAL_AMOUNT && n <= liquid
+                ? t('withdrawCta', { amount: n })
+                : n > liquid && n <= TOTAL_LIQUID
+                  ? `Enqueue withdrawal for $${formatDecimal(n, DISPLAY_DECIMALS)}`
+                  : t('withdrawCtaEmpty')}
             </Button>
             <button
               onClick={onBack}
@@ -221,28 +287,62 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                 whiteSpace: 'nowrap',
               }}
             >
-              {t('successH1')}
+              {isQueued ? 'Withdrawal queued' : t('successH1')}
             </div>
-            <h1 style={{ ...hw, textAlign: 'center' }}>{t('successH1')}</h1>
-            <p
-              style={{
-                fontFamily: 'var(--font-body)',
-                fontSize: 'var(--type-data)',
-                lineHeight: 1.55,
-                color: 'var(--ink-60)',
-                textAlign: 'center',
-                margin: '0 0 22px',
-              }}
-            >
-              {t.rich('successBody', {
-                amount: formatDecimal(n, DISPLAY_DECIMALS),
-                num: (c: ReactNode) => (
-                  <b className="hb-data" style={{ color: 'var(--ink)' }}>
-                    {c}
-                  </b>
-                ),
-              })}
-            </p>
+            <h1 style={{ ...hw, textAlign: 'center' }}>
+              {isQueued ? 'Withdrawal queued' : t('successH1')}
+            </h1>
+            {isQueued ? (
+              <div style={{ textAlign: 'center', marginBottom: 22 }}>
+                <div
+                  style={{
+                    display: 'inline-block',
+                    padding: '8px 16px',
+                    borderRadius: 'var(--radius-pill)',
+                    background: 'rgba(234, 179, 8, 0.15)',
+                    border: '1px solid rgba(234, 179, 8, 0.4)',
+                    color: 'var(--ink)',
+                    fontFamily: 'var(--font-data)',
+                    fontWeight: 600,
+                    fontSize: 'var(--type-small)',
+                    marginBottom: 14,
+                  }}
+                >
+                  Queued — position #{queuePosition ?? 1}, est. amount ${formatDecimal(estimatedAmount ?? n, DISPLAY_DECIMALS)} USDC
+                </div>
+                <p
+                  style={{
+                    fontFamily: 'var(--font-body)',
+                    fontSize: 'var(--type-data)',
+                    lineHeight: 1.55,
+                    color: 'var(--ink-60)',
+                    margin: 0,
+                  }}
+                >
+                  Your withdrawal has been queued in the FIFO queue because immediate vault liquidity is limited. You can track and claim this withdrawal from your Portfolio once liquidity becomes available.
+                </p>
+              </div>
+            ) : (
+              <p
+                style={{
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--type-data)',
+                  lineHeight: 1.55,
+                  color: 'var(--ink-60)',
+                  textAlign: 'center',
+                  margin: '0 0 22px',
+                }}
+              >
+                {t.rich('successBody', {
+                  amount: formatDecimal(n, DISPLAY_DECIMALS),
+                  num: (c: ReactNode) => (
+                    <b className="hb-data" style={{ color: 'var(--ink)' }}>
+                      {c}
+                    </b>
+                  ),
+                })}
+              </p>
+            )}
             {txHash && (
               <div style={{ textAlign: 'center', marginBottom: 16 }}>
                 <AddressChip

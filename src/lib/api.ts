@@ -4,12 +4,18 @@
 import { type Project } from '../data'
 import { type ProjectDetail } from '../data/projectDetails'
 import { selectProjectById, selectProjectDetail, selectProjects } from '../state/selectors'
+import {
+  isRegistryConfigured,
+  fetchProjectsPage,
+  fetchProjectWithDetails,
+} from '../wallet/registry'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
 
 export interface ProjectWithDetail {
 	project: Project
 	detail: ProjectDetail
+	verifiedMetadata?: boolean
 }
 
 export interface Investment {
@@ -32,6 +38,18 @@ export interface PaginatedProjectsResponse {
  * Fetches a paginated/lazy chunk of bonds to optimize initial load time from 3-5s down to sub-second.
  */
 export async function getProjectsPaginated(page = 1, pageSize = 12): Promise<PaginatedProjectsResponse> {
+	if (isRegistryConfigured()) {
+		const offset = (page - 1) * pageSize
+		const pageResult = await fetchProjectsPage(offset, pageSize)
+		return {
+			projects: pageResult.projects,
+			total: pageResult.total,
+			page,
+			pageSize,
+			hasMore: pageResult.hasMore,
+		}
+	}
+
 	if (!API_URL) {
 		const all = selectProjects()
 		const start = (page - 1) * pageSize
@@ -76,6 +94,10 @@ export async function getProjectsPaginated(page = 1, pageSize = 12): Promise<Pag
 }
 
 export async function getProjects(): Promise<Project[]> {
+  if (isRegistryConfigured()) {
+    const pageResult = await fetchProjectsPage(0, 100)
+    return pageResult.projects
+  }
   if (!API_URL) return selectProjects()
   try {
     const res = await fetch(`${API_URL}/projects`)
@@ -88,18 +110,24 @@ export async function getProjects(): Promise<Project[]> {
 }
 
 export async function getProject(id: number): Promise<ProjectWithDetail | null> {
+	if (isRegistryConfigured()) {
+		const res = await fetchProjectWithDetails(id)
+		if (res) {
+			return {
+				project: res.project,
+				detail: res.detail,
+				verifiedMetadata: res.verifiedMetadata,
+			}
+		}
+	}
+
 	const mockProject = selectProjectById(id)
 	const mockDetail = selectProjectDetail(id)
 
 	if (!API_URL) {
 		if (!mockProject || !mockDetail) return null
-		return { project: mockProject, detail: mockDetail }
+		return { project: mockProject, detail: mockDetail, verifiedMetadata: true }
 	}
-
-  if (!API_URL) {
-    if (!mockProject || !mockDetail) return null
-    return { project: mockProject, detail: mockDetail }
-  }
 
   try {
     const res = await fetch(`${API_URL}/projects/${id}`)
@@ -108,7 +136,7 @@ export async function getProject(id: number): Promise<ProjectWithDetail | null> 
   } catch {
     console.warn(`[api] GET /projects/${id} failed -- using mock data`)
     if (!mockProject || !mockDetail) return null
-    return { project: mockProject, detail: mockDetail }
+    return { project: mockProject, detail: mockDetail, verifiedMetadata: true }
   }
 }
 

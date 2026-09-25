@@ -77,7 +77,11 @@ function mockClipboard() {
 
 describe('Withdraw', () => {
   beforeEach(() => {
-    vi.mocked(submitWithdraw).mockResolvedValue(FULL_TX_HASH)
+    vi.mocked(submitWithdraw).mockResolvedValue({
+      hash: FULL_TX_HASH,
+      queued: false,
+      toString: () => FULL_TX_HASH,
+    })
   })
 
   test('shows a compact transaction chip on success while preserving full hash actions', async () => {
@@ -107,5 +111,42 @@ describe('Withdraw', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to portfolio' }))
     expect(onDone).toHaveBeenCalledTimes(1)
+  })
+
+  test('shows liquidity warning before submit when amount exceeds liquid balance', async () => {
+    render(<Withdraw onDone={vi.fn()} onBack={vi.fn()} />)
+
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '300' } })
+
+    expect(
+      screen.getByText(/Requested amount exceeds immediately available liquid balance/),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: 'Enqueue withdrawal for $300.00' }),
+    ).toBeEnabled()
+  })
+
+  test('renders queued state with position and estimated amount when withdrawal is queued', async () => {
+    vi.mocked(submitWithdraw).mockResolvedValue({
+      hash: FULL_TX_HASH,
+      queued: true,
+      position: 3,
+      estimatedAmount: 300,
+      toString: () => FULL_TX_HASH,
+    })
+
+    render(<Withdraw onDone={vi.fn()} onBack={vi.fn()} />)
+
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '300' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enqueue withdrawal for $300.00' }))
+
+    await expect(
+      screen.findByRole('heading', { name: 'Withdrawal queued' }),
+    ).resolves.toBeVisible()
+
+    expect(
+      screen.getByText(/Queued — position #3, est\. amount \$300\.00 USDC/),
+    ).toBeVisible()
+    expect(screen.getByText('abcdef…567890')).toBeVisible()
   })
 })

@@ -25,6 +25,7 @@ import { type ProjectDetail as ProjectDetailData } from '../data/projectDetails'
 export interface ProjectDetailProps {
   project: Project
   detail: ProjectDetailData
+  verifiedMetadata?: boolean
   onInvest: () => Promise<string>
   onBack?: () => void
 }
@@ -32,6 +33,7 @@ export interface ProjectDetailProps {
 export const ProjectDetail = memo(function ProjectDetail({
   project,
   detail,
+  verifiedMetadata = true,
   onInvest,
   onBack,
 }: ProjectDetailProps) {
@@ -114,9 +116,16 @@ export const ProjectDetail = memo(function ProjectDetail({
             gap: 12,
           }}
         >
-          <Badge tone="growth" icon={<ShieldCheckIcon />}>
-            {t('verifiedSince', { since: creatorSince })}
-          </Badge>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Badge tone="growth" icon={<ShieldCheckIcon />}>
+              {t('verifiedSince', { since: creatorSince })}
+            </Badge>
+            {verifiedMetadata !== false && (
+              <Badge tone="growth" icon={<ShieldCheckIcon />}>
+                Verified metadata
+              </Badge>
+            )}
+          </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <YieldAlertButton
               bondId={project.id}

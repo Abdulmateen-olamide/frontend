@@ -1,11 +1,14 @@
 'use client'
 
-import { memo, type CSSProperties, type ReactNode } from 'react'
+import { memo, useState, useEffect, useCallback, type CSSProperties, type ReactNode } from 'react'
 import { useTranslations } from 'next-intl'
-import { Button, StatBlock, LiquidityMeter, Card } from '../components'
+import { Button, StatBlock, LiquidityMeter, Card, AddressChip, useToast } from '../components'
 import { Helio } from '../brand/Helio'
 import { selectActivity, selectYou } from '../state/selectors'
 import { useWallet } from '../wallet/WalletProvider'
+import { getPendingClaims, removePendingClaim, type PendingClaim } from '../wallet/pendingClaims'
+import { submitClaim } from '../wallet/vault'
+import { formatDecimal } from '../lib/format'
 
 const MemoizedHelio = memo(Helio)
 
@@ -23,12 +26,46 @@ export interface PortfolioProps {
 
 export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: PortfolioProps) {
   const t = useTranslations('Portfolio')
-  const { connected, connect } = useWallet()
+  const { connected, connect, address, sign } = useWallet()
+  const { toast } = useToast()
   // Flat selectors — one level, no drilling through the nested state shape.
   const you = selectYou()
   const activity = selectActivity()
   const risk = { score: you.riskScore, level: you.riskLevel }
   const referralLink = you.referralLink
+
+  const [pendingClaims, setPendingClaims] = useState<PendingClaim[]>([])
+  const [claiming, setClaiming] = useState(false)
+
+  const refreshClaims = useCallback(() => {
+    setPendingClaims(getPendingClaims(address ?? undefined))
+  }, [address])
+
+  useEffect(() => {
+    refreshClaims()
+  }, [refreshClaims])
+
+  const handleClaim = async () => {
+    setClaiming(true)
+    try {
+      await submitClaim(address ?? '', sign)
+      pendingClaims.forEach((c) => removePendingClaim(c.hash))
+      refreshClaims()
+      toast({
+        tone: 'success',
+        title: 'Withdrawals claimed',
+        message: 'Queued withdrawals claimed successfully and paid out in USDC.',
+      })
+    } catch (e) {
+      toast({
+        tone: 'error',
+        title: 'Claim failed',
+        message: e instanceof Error ? e.message : 'Could not process claim at this time.',
+      })
+    } finally {
+      setClaiming(false)
+    }
+  }
 
   if (!connected) {
     return (
@@ -137,6 +174,104 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
           </p>
         </Card>
       </div>
+
+      {/* Pending queued withdrawals */}
+      <Card style={{ padding: 22, marginBottom: 28 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 12,
+            marginBottom: pendingClaims.length > 0 ? 16 : 0,
+          }}
+        >
+          <div>
+            <h3 style={cardTitle}>Pending withdrawals</h3>
+            <p
+              style={{
+                fontFamily: 'var(--font-body)',
+                fontSize: 'var(--type-small)',
+                color: 'var(--ink-60)',
+                margin: '4px 0 0',
+              }}
+            >
+              {pendingClaims.length > 0
+                ? `${pendingClaims.length} queued FIFO claim${pendingClaims.length > 1 ? 's' : ''} awaiting vault liquidity.`
+                : 'No queued withdrawals. Immediate liquidity is available for standard payouts.'}
+            </p>
+          </div>
+          {pendingClaims.length > 0 && (
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={claiming}
+              onClick={handleClaim}
+            >
+              {claiming ? 'Claiming...' : 'Claim available liquidity'}
+            </Button>
+          )}
+        </div>
+        {pendingClaims.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {pendingClaims.map((claim) => (
+              <div
+                key={claim.id || claim.hash}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '12px 14px',
+                  background: 'var(--ink-04)',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--ink-12)',
+                  flexWrap: 'wrap',
+                  gap: 12,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-data)',
+                      fontSize: 'var(--type-small)',
+                      fontWeight: 600,
+                      color: 'var(--solar)',
+                      background: 'rgba(234, 179, 8, 0.15)',
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-pill)',
+                    }}
+                  >
+                    Queue #{claim.position}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-data)',
+                      fontSize: 'var(--type-body)',
+                      fontWeight: 600,
+                      color: 'var(--ink)',
+                    }}
+                  >
+                    ${formatDecimal(claim.amount, 2)} USDC
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-body)',
+                      fontSize: 'var(--type-caption)',
+                      color: 'var(--ink-60)',
+                    }}
+                  >
+                    {new Date(claim.timestamp).toLocaleDateString()}
+                  </span>
+                  <AddressChip value={claim.hash} label="transaction hash" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       {/* Portfolio risk indicator from bond ratings mix */}
       <Card style={{ padding: 22, marginBottom: 28 }}>
