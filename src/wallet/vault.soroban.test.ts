@@ -111,7 +111,7 @@ afterEach(() => {
 })
 
 describe('signed transactions', () => {
-  it('deposit(from: Address, usdc_amount: i128)', async () => {
+  it('deposit(usdc_amount: i128, min_shares: i128)', async () => {
     const vault = await loadVault()
     const hash = await settle(vault.submitDeposit(125.5, USER, sign))
 
@@ -120,8 +120,8 @@ describe('signed transactions', () => {
     expect(call).toEqual({
       contract: CONTRACT_ID,
       method: 'deposit',
-      argTypes: ['scvAddress', 'scvI128'],
-      args: [USER, 1_255_000_000n],
+      argTypes: ['scvI128', 'scvI128'],
+      args: [1_255_000_000n, BigInt(Math.floor((125.5 / vault.SHARE_PRICE) * 0.995 * 1e7))],
     })
     // The simulated transaction is what gets signed and submitted.
     expect(sign).toHaveBeenCalledWith(simulatedTx().toXDR())
@@ -132,7 +132,7 @@ describe('signed transactions', () => {
     expect(rpcMock.getTransaction).toHaveBeenCalledWith('abc123')
   })
 
-  it('withdraw(from: Address, shares_amount: i128, min_usdc_return: i128)', async () => {
+  it('withdraw(shares_amount: i128, min_usdc_return: i128)', async () => {
     const vault = await loadVault()
     const result = await settle(vault.submitWithdraw(200, USER, sign))
 
@@ -141,8 +141,11 @@ describe('signed transactions', () => {
     expect(invocation(simulatedTx())).toEqual({
       contract: CONTRACT_ID,
       method: 'withdraw',
-      argTypes: ['scvAddress', 'scvI128', 'scvI128'],
-      args: [USER, 2_000_000_000n, 0n],
+      argTypes: ['scvI128', 'scvI128'],
+      args: [
+        BigInt(Math.round((200 / vault.SHARE_PRICE) * 1e7)),
+        BigInt(Math.floor(200 * 0.995 * 1e7)),
+      ],
     })
   })
 
@@ -166,7 +169,7 @@ describe('signed transactions', () => {
   it('scales amounts to 7-decimal i128 without float drift', async () => {
     const vault = await loadVault()
     await settle(vault.submitDeposit(0.1 + 0.2, USER, sign))
-    expect(invocation(simulatedTx()).args[1]).toBe(3_000_000n)
+    expect(invocation(simulatedTx()).args[0]).toBe(3_000_000n)
     expect(vault.toStroops(1)).toBe(10_000_000n)
   })
 

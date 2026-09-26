@@ -1,7 +1,7 @@
-import { renderHook, act, waitFor } from '@testing-library/react'
+import { renderHook, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useVault } from './useVault'
 import { WalletProvider } from './WalletProvider'
-import * as vaultModule from './vault'
 
 const mockFetchSharePrice = vi.fn()
 const mockFetchTotalAssets = vi.fn()
@@ -31,7 +31,8 @@ function createWrapper() {
 describe('useVault', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.useFakeTimers()
+    localStorage.setItem('hb-address', TEST_ADDRESS)
+    localStorage.removeItem('hb-wallet')
     // Mock contract ID and RPC URL
     vi.stubEnv('NEXT_PUBLIC_VAULT_CONTRACT_ID', 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH')
     vi.stubEnv('NEXT_PUBLIC_STELLAR_NETWORK', 'testnet')
@@ -40,6 +41,7 @@ describe('useVault', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllEnvs()
+    localStorage.clear()
   })
 
   it('passes connected address and network to fetchSharePrice and fetchTotalAssets', async () => {

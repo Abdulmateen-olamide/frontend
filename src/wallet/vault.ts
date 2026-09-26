@@ -176,7 +176,7 @@ async function sorobanSimulate(
   method: string,
   args: XdrTypes.ScVal[] = [],
   network: string = STELLAR_NETWORK,
-) {
+): Promise<XdrTypes.ScVal> {
   const { rpc, Contract, TransactionBuilder, Account } = await import('@stellar/stellar-sdk')
 
   const server = new rpc.Server(RPC_URL, { allowHttp: allowHttpFor(RPC_URL) })
@@ -213,7 +213,7 @@ async function sorobanSimulate(
     throw new Error(`Soroban simulate error: ${error}`)
   }
   if (!result.result) throw new Error('Soroban simulate returned no result')
-  return result.result.retval
+  return result.result.retval as XdrTypes.ScVal
 }
 
 /**
@@ -471,7 +471,7 @@ export async function submitDeposit(
     })
   }
 
-  const { Address, nativeToScVal } = await import('@stellar/stellar-sdk')
+  const { nativeToScVal } = await import('@stellar/stellar-sdk')
   const minShares = Math.floor((amount / cachedSharePrice) * (1 - slippageTolerance) * SCALE)
   const { hash } = await invokeSigned(
     address,
@@ -524,7 +524,7 @@ export async function submitWithdraw(
     })
   }
 
-  const { Address, nativeToScVal, xdr, scValToNative } = await import('@stellar/stellar-sdk')
+  const { nativeToScVal, xdr, scValToNative } = await import('@stellar/stellar-sdk')
 
   const shares = Math.round((amount / cachedSharePrice) * SCALE)
   const minUsdcReturn = Math.floor(amount * (1 - slippageTolerance) * SCALE)
