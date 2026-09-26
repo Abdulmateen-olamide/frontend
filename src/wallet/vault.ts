@@ -9,8 +9,8 @@
 //   submitDeposit / submitWithdraw / submitClaim / submitClaimYield — signed txs
 //
 // Argument lists follow the InvestmentVault ABI (Heliobond/contracts):
-//   deposit(from: Address, usdc_amount: i128) -> i128
-//   withdraw(from: Address, shares_amount: i128, min_usdc_return: i128) -> i128
+//   deposit(usdc_amount: i128, min_shares: i128) -> i128
+//   withdraw(shares_amount: i128, min_usdc_return: i128) -> i128
 //   claim() -> i128                       (settles queued withdrawals, FIFO)
 //   claim_yield(from: Address) -> i128
 //   total_assets() / convert_to_assets(shares: i128) / get_portfolio(account: Address)
@@ -176,7 +176,7 @@ async function sorobanSimulate(
   method: string,
   args: XdrTypes.ScVal[] = [],
   network: string = STELLAR_NETWORK,
-) {
+): Promise<XdrTypes.ScVal> {
   const { rpc, Contract, TransactionBuilder, Account } = await import('@stellar/stellar-sdk')
 
   const server = new rpc.Server(RPC_URL, { allowHttp: allowHttpFor(RPC_URL) })
@@ -193,10 +193,27 @@ async function sorobanSimulate(
   const result = await withTimeout(
     server.simulateTransaction(tx),
     'Stellar RPC timed out during simulation',
-  )
-  if ('error' in result) throw new Error(`Soroban simulate error: ${result.error}`)
+  ) as { error?: string; result?: { retval: unknown } }
+  if ('error' in result) {
+    const error = result.error
+    // Distinguish programming errors (bad address, bad args) from network errors
+    // Invalid address/contract errors should NOT mark the app as offline
+    const isProgrammingError =
+      typeof error === 'string' &&
+      (error.includes('Invalid address') ||
+        error.includes('invalid address') ||
+        error.includes('Malformed') ||
+        error.includes('malformed') ||
+        error.includes('Contract not found') ||
+        error.includes('contract not found') ||
+        error.includes('not a valid'))
+    if (isProgrammingError) {
+      throw new Error(`Soroban simulate error: ${error}`)
+    }
+    throw new Error(`Soroban simulate error: ${error}`)
+  }
   if (!result.result) throw new Error('Soroban simulate returned no result')
-  return result.result.retval
+  return result.result.retval as XdrTypes.ScVal
 }
 
 /**
@@ -205,18 +222,33 @@ async function sorobanSimulate(
  * Throws when NEXT_PUBLIC_VAULT_CONTRACT_ID is not set — callers should catch
  * and fall back to the mock value.
  */
-export async function fetchSharePrice(sourceAddress: string): Promise<string> {
+export async function fetchSharePrice(
+  sourceAddress: string,
+  network = STELLAR_NETWORK,
+): Promise<string> {
   if (!CONTRACT_ID) throw new Error('NEXT_PUBLIC_VAULT_CONTRACT_ID not set')
   if (offline) return formatSharePrice(cachedSharePrice)
   const { scValToNative, nativeToScVal } = await import('@stellar/stellar-sdk')
   try {
     const oneShare = nativeToScVal(toStroops(1), { type: 'i128' })
-    const retval = await sorobanSimulate(sourceAddress, 'convert_to_assets', [oneShare])
+    const retval = await sorobanSimulate(sourceAddress, 'convert_to_assets', [oneShare], network)
     const assetsPerShare = Number(scValToNative(retval)) / SCALE
     cachedSharePrice = assetsPerShare > 0 ? assetsPerShare : 1
     return formatSharePrice(cachedSharePrice)
-  } catch {
-    setOffline(true)
+  } catch (e) {
+    // Don't mark offline for programming errors (invalid address, bad contract, etc.)
+    const msg = e instanceof Error ? e.message : String(e)
+    const isProgrammingError =
+      msg.includes('Invalid address') ||
+      msg.includes('invalid address') ||
+      msg.includes('Malformed') ||
+      msg.includes('malformed') ||
+      msg.includes('Contract not found') ||
+      msg.includes('contract not found') ||
+      msg.includes('not a valid')
+    if (!isProgrammingError) {
+      setOffline(true)
+    }
     return formatSharePrice(cachedSharePrice)
   }
 }
@@ -236,8 +268,19 @@ export async function fetchTotalAssets(
     const retval = await sorobanSimulate(sourceAddress, 'total_assets', [], network)
     cachedTotalAssets = Number(scValToNative(retval)) / SCALE
     return cachedTotalAssets
-  } catch {
-    setOffline(true)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    const isProgrammingError =
+      msg.includes('Invalid address') ||
+      msg.includes('invalid address') ||
+      msg.includes('Malformed') ||
+      msg.includes('malformed') ||
+      msg.includes('Contract not found') ||
+      msg.includes('contract not found') ||
+      msg.includes('not a valid')
+    if (!isProgrammingError) {
+      setOffline(true)
+    }
     return cachedTotalAssets ?? 0
   }
 }
@@ -256,7 +299,19 @@ export async function fetchUtilizationBps(
   try {
     const retval = await sorobanSimulate(sourceAddress, 'get_utilization_bps', [], network)
     return Number(scValToNative(retval))
-  } catch {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    const isProgrammingError =
+      msg.includes('Invalid address') ||
+      msg.includes('invalid address') ||
+      msg.includes('Malformed') ||
+      msg.includes('malformed') ||
+      msg.includes('Contract not found') ||
+      msg.includes('contract not found') ||
+      msg.includes('not a valid')
+    if (!isProgrammingError) {
+      setOffline(true)
+    }
     return 0
   }
 }
@@ -386,6 +441,7 @@ async function invokeSigned(
  * @param amount  USDC amount (integer stroops internally)
  * @param address Stellar address of the depositor (source account)
  * @param sign    Signing function from WalletProvider
+ * @param slippageTolerance  Slippage tolerance as decimal (e.g., 0.005 = 0.5%)
  * @returns       Transaction hash (real or placeholder)
  */
 export async function submitDeposit(
@@ -393,6 +449,7 @@ export async function submitDeposit(
   address: string,
   sign: (xdr: string) => Promise<string>,
   signal?: AbortSignal,
+  slippageTolerance = 0.005,
 ): Promise<string> {
   if (!CONTRACT_ID) {
     return new Promise<string>((resolve, reject) => {
@@ -414,11 +471,15 @@ export async function submitDeposit(
     })
   }
 
-  const { Address, nativeToScVal } = await import('@stellar/stellar-sdk')
+  const { nativeToScVal } = await import('@stellar/stellar-sdk')
+  const minShares = Math.floor((amount / cachedSharePrice) * (1 - slippageTolerance) * SCALE)
   const { hash } = await invokeSigned(
     address,
     'deposit',
-    [new Address(address).toScVal(), nativeToScVal(toStroops(amount), { type: 'i128' })],
+    [
+      nativeToScVal(toStroops(amount), { type: 'i128' }),
+      nativeToScVal(BigInt(minShares), { type: 'i128' }),
+    ],
     sign,
   )
   return hash
@@ -433,6 +494,7 @@ export async function submitDeposit(
  * @param amount  USDC amount to withdraw
  * @param address Stellar address of the withdrawer
  * @param sign    Signing function from WalletProvider
+ * @param slippageTolerance  Slippage tolerance as decimal (e.g., 0.005 = 0.5%)
  * @returns       WithdrawResult with hash and queued status
  */
 export async function submitWithdraw(
@@ -440,6 +502,7 @@ export async function submitWithdraw(
   address: string,
   sign: (xdr: string) => Promise<string>,
   signal?: AbortSignal,
+  slippageTolerance = 0.005,
 ): Promise<WithdrawResult> {
   if (!CONTRACT_ID) {
     return new Promise<WithdrawResult>((resolve, reject) => {
@@ -461,16 +524,16 @@ export async function submitWithdraw(
     })
   }
 
-  const { Address, nativeToScVal, xdr, scValToNative } = await import('@stellar/stellar-sdk')
+  const { nativeToScVal, xdr, scValToNative } = await import('@stellar/stellar-sdk')
 
-  // min_usdc_return = 0: no slippage bound yet (tracked in #585).
+  const shares = Math.round((amount / cachedSharePrice) * SCALE)
+  const minUsdcReturn = Math.floor(amount * (1 - slippageTolerance) * SCALE)
   const { hash, confirmation: conf } = await invokeSigned(
     address,
     'withdraw',
     [
-      new Address(address).toScVal(),
-      nativeToScVal(toStroops(amount), { type: 'i128' }),
-      nativeToScVal(BigInt(0), { type: 'i128' }),
+      nativeToScVal(BigInt(shares), { type: 'i128' }),
+      nativeToScVal(BigInt(minUsdcReturn), { type: 'i128' }),
     ],
     sign,
   )

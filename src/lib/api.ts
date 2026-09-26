@@ -1,5 +1,7 @@
 // Heliobond — project data API client with lazy-loading and pagination support.
-// Reads from NEXT_PUBLIC_API_URL when set, and the request fails, so the click-through always works without a running backend.
+// Reads from NEXT_PUBLIC_API_URL when set. In production (API_URL configured),
+// errors are surfaced through the error pipeline. In demo mode (no API_URL or
+// NEXT_PUBLIC_DEMO_MODE=true), mock data is used with a visible "Demo data" indicator.
 
 import { type Project } from '../data'
 import { type ProjectDetail } from '../data/projectDetails'
@@ -9,23 +11,34 @@ import {
   fetchProjectsPage,
   fetchProjectWithDetails,
 } from '../wallet/registry'
+import { ApiError } from './error'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
+const DEMO_MODE = !API_URL || process.env.NEXT_PUBLIC_DEMO_MODE === 'true'
+
+function isDemoMode(): boolean {
+  return DEMO_MODE
+}
+
+/** Returns true if the UI should show a "Demo data" badge. */
+export function shouldShowDemoBadge(): boolean {
+  return isDemoMode()
+}
 
 /** Requests slower than this are aborted and the call falls back (#608). */
 export const API_TIMEOUT_MS = 8000
 
 /**
  * GET/POST `path` on the API and parse the JSON body. Rejects on a non-2xx
- * status ("HTTP 503"), a timeout, a network error or a malformed body — every
- * caller catches and falls back, logging the reason.
+ * status ("HTTP 503"), a timeout, a network error or a malformed body. Demo
+ * fallbacks are selected before calling this helper; production errors bubble up.
  */
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS)
   try {
     const res = await fetch(`${API_URL}${path}`, { ...init, signal: controller.signal })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw new ApiError({ status: res.status, message: `HTTP ${res.status}` })
     return (await res.json()) as T
   } catch (error) {
     if (controller.signal.aborted) throw new Error(`timed out after ${API_TIMEOUT_MS}ms`)
@@ -33,10 +46,6 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   } finally {
     clearTimeout(timer)
   }
-}
-
-function reason(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 export interface ProjectWithDetail {
@@ -77,7 +86,7 @@ export async function getProjectsPaginated(page = 1, pageSize = 12): Promise<Pag
 		}
 	}
 
-	if (!API_URL) {
+	if (isDemoMode()) {
 		const all = selectProjects()
 		const start = (page - 1) * pageSize
 		const projects = all.slice(start, start + pageSize)
@@ -104,17 +113,8 @@ export async function getProjectsPaginated(page = 1, pageSize = 12): Promise<Pag
 		}
 		return data as PaginatedProjectsResponse
 	} catch (error) {
-		console.warn(`[api] GET /projects paginated failed (${reason(error)}) -- using local dataset chunk`)
-		const all = selectProjects()
-		const start = (page - 1) * pageSize
-		const projects = all.slice(start, start + pageSize)
-		return {
-			projects,
-			total: all.length,
-			page,
-			pageSize,
-			hasMore: start + pageSize < all.length,
-		}
+		if (error instanceof ApiError) throw error
+		throw new ApiError({ cause: error, message: 'Failed to fetch projects' })
 	}
 }
 
@@ -123,12 +123,12 @@ export async function getProjects(): Promise<Project[]> {
     const pageResult = await fetchProjectsPage(0, 100)
     return pageResult.projects
   }
-  if (!API_URL) return selectProjects()
+  if (isDemoMode()) return selectProjects()
   try {
     return await apiFetch<Project[]>('/projects')
   } catch (error) {
-    console.warn(`[api] GET /projects failed (${reason(error)}) -- using mock data`)
-    return selectProjects()
+    if (error instanceof ApiError) throw error
+    throw new ApiError({ cause: error, message: 'Failed to fetch projects' })
   }
 }
 
@@ -147,7 +147,7 @@ export async function getProject(id: number): Promise<ProjectWithDetail | null> 
 	const mockProject = selectProjectById(id)
 	const mockDetail = selectProjectDetail(id)
 
-	if (!API_URL) {
+	if (isDemoMode()) {
 		if (!mockProject || !mockDetail) return null
 		return { project: mockProject, detail: mockDetail, verifiedMetadata: true }
 	}
@@ -155,9 +155,8 @@ export async function getProject(id: number): Promise<ProjectWithDetail | null> 
   try {
     return await apiFetch<ProjectWithDetail>(`/projects/${id}`)
   } catch (error) {
-    console.warn(`[api] GET /projects/${id} failed (${reason(error)}) -- using mock data`)
-    if (!mockProject || !mockDetail) return null
-    return { project: mockProject, detail: mockDetail, verifiedMetadata: true }
+    if (error instanceof ApiError) throw error
+    throw new ApiError({ cause: error, message: `Failed to fetch project ${id}` })
   }
 }
 
@@ -179,7 +178,7 @@ export async function createInvestment(input: { projectId: number; amount: numbe
       projectUrl: `/projects/${input.projectId}`,
     })
 
-  if (!API_URL) {
+  if (isDemoMode()) {
     return mockInvestment()
   }
 
@@ -194,8 +193,8 @@ export async function createInvestment(input: { projectId: number; amount: numbe
       projectUrl: `/projects/${encodeURIComponent(input.projectId)}`,
     }
   } catch (error) {
-    console.warn(`[api] POST /investments failed (${reason(error)}) -- using mock data`)
-    return mockInvestment()
+    if (error instanceof ApiError) throw error
+    throw new ApiError({ cause: error, message: 'Failed to create investment' })
   }
 }
 
@@ -254,15 +253,13 @@ export async function getPriceHistory(projectId: number): Promise<PricePoint[]> 
     return points.reverse() // ascending chronological order
   }
 
-  if (!API_URL) return makeMock()
+  if (isDemoMode()) return makeMock()
   try {
     const data = await apiFetch<PricePoint[]>(`/projects/${projectId}/price-history`)
     // Sort ascending by date to ensure chronological order for charting
     return data.sort((a, b) => a.date.localeCompare(b.date))
   } catch (error) {
-    console.warn(
-      `[api] GET /projects/${projectId}/price-history failed (${reason(error)}) -- using mock data`,
-    )
-    return makeMock()
+    if (error instanceof ApiError) throw error
+    throw new ApiError({ cause: error, message: `Failed to fetch price history for project ${projectId}` })
   }
 }

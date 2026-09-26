@@ -16,16 +16,19 @@ import { projectedReturn } from '../lib/bondUtils'
 import { useDepositGuard } from '../hooks/useDepositGuard'
 import { RecurringInvestmentOptions } from '../components/RecurringInvestmentOptions'
 
-/**
- * Deposit — the flow that must be perfect. One column, one decision per step:
- * amount (live preview from the vault) -> review in plain words -> pending (hash
- * from second zero) -> success (impact, not hype). Errors name cause + fix.
- */
+const MIN_DEPOSIT_USDC = 1
+const USER_BALANCE_USDC = 240
+const DEFAULT_DEPOSIT_USDC = '100'
+const QUICK_DEPOSIT_AMOUNTS_USDC = [25, 50, 100]
+const DEPOSIT_FEE_USDC = 0.01
+const RATE_STALE_AFTER_SECONDS = 30
+const DEFAULT_SLIPPAGE_TOLERANCE = 0.005 // 0.5%
+
+type DepositStep = 'amount' | 'review' | 'pending' | 'success'
+
 export interface DepositProps {
   onDone: () => void
 }
-
-type DepositStep = 'amount' | 'review' | 'pending' | 'success'
 
 const num = (chunks: ReactNode) => (
   <b className="hb-data" style={{ color: 'var(--ink)' }}>
@@ -33,12 +36,6 @@ const num = (chunks: ReactNode) => (
   </b>
 )
 const strong = (chunks: ReactNode) => <b style={{ color: 'var(--ink)' }}>{chunks}</b>
-const MIN_DEPOSIT_USDC = 1
-const USER_BALANCE_USDC = 240
-const DEFAULT_DEPOSIT_USDC = '100'
-const QUICK_DEPOSIT_AMOUNTS_USDC = [25, 50, 100]
-const DEPOSIT_FEE_USDC = 0.01
-const RATE_STALE_AFTER_SECONDS = 30
 
 export function Deposit({ onDone }: DepositProps) {
   const t = useTranslations('Deposit')
@@ -59,6 +56,7 @@ export function Deposit({ onDone }: DepositProps) {
   const [txError, setTxError] = useState<string | null>(null)
   const [recurring, setRecurring] = useState(false)
   const [recurrenceDay, setRecurrenceDay] = useState(1)
+  const [slippageTolerance, setSlippageTolerance] = useState(DEFAULT_SLIPPAGE_TOLERANCE)
   const priceFetchedAt = fetchedAt ?? new Date()
   const [now, setNow] = useState(() => Date.now())
 
@@ -121,7 +119,7 @@ export function Deposit({ onDone }: DepositProps) {
     try {
       // The tx hash is polled for confirmation inside submitDeposit; nothing
       // on this surface reads it, so we don't bind it.
-      await submitDeposit(n, address ?? '', sign, controller.signal)
+      await submitDeposit(n, address ?? '', sign, controller.signal, slippageTolerance)
       if (mountedRef.current) {
         clearPending()
         changeStep('success')
@@ -175,7 +173,7 @@ export function Deposit({ onDone }: DepositProps) {
         abortControllerRef.current = null
       }
     }
-  }, [n, address, sign, markPending, clearPending, changeStep, toast])
+  }, [n, address, sign, markPending, clearPending, changeStep, toast, slippageTolerance])
 
   const price = livePrice
   const balance = USER_BALANCE_USDC
@@ -437,6 +435,43 @@ export function Deposit({ onDone }: DepositProps) {
                 to get the latest price before confirming.
               </div>
             )}
+            <div style={{ marginBottom: 16 }}>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--type-small)',
+                  color: 'var(--ink-60)',
+                  cursor: 'pointer',
+                }}
+              >
+                <span>Slippage tolerance</span>
+                <select
+                  value={slippageTolerance}
+                  onChange={(e) => setSlippageTolerance(Number(e.target.value))}
+                  style={{
+                    fontFamily: 'var(--font-body)',
+                    fontSize: 'var(--type-small)',
+                    padding: '6px 10px',
+                    borderRadius: 'var(--radius-input)',
+                    border: '1px solid var(--ink-12)',
+                    background: 'var(--surface)',
+                    color: 'var(--ink)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value={0.001}>0.1%</option>
+                  <option value={0.005}>0.5% (default)</option>
+                  <option value={0.01}>1%</option>
+                  <option value={0.02}>2%</option>
+                </select>
+                <span style={{ color: 'var(--ink-40)', fontSize: 'var(--type-caption)' }}>
+                  Min shares: {formatDecimal((n / price) * (1 - slippageTolerance), 4)} HBS
+                </span>
+              </label>
+            </div>
             <RecurringInvestmentOptions
               enabled={recurring}
               amount={n}

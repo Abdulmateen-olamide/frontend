@@ -17,6 +17,7 @@ const QUICK_WITHDRAW_AMOUNT_LARGE = 10000
 const QUICK_WITHDRAW_AMOUNTS = [QUICK_WITHDRAW_AMOUNT_SMALL, QUICK_WITHDRAW_AMOUNT_MEDIUM, QUICK_WITHDRAW_AMOUNT_LARGE]
 const MIN_WITHDRAWAL_AMOUNT = 1
 const DISPLAY_DECIMALS = 2
+const DEFAULT_SLIPPAGE_TOLERANCE = 0.005 // 0.5%
 
 /**
  * Withdraw — designed with the most care of all. Capped at the live liquid
@@ -42,6 +43,7 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
   const [isQueued, setIsQueued] = useState(false)
   const [queuePosition, setQueuePosition] = useState<number | null>(null)
   const [estimatedAmount, setEstimatedAmount] = useState<number | null>(null)
+  const [slippageTolerance, setSlippageTolerance] = useState(DEFAULT_SLIPPAGE_TOLERANCE)
 
   const mountedRef = useRef(true)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -145,6 +147,45 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                 Amount exceeds maximum graduated tier limit (${TOTAL_LIQUID}.00).
               </div>
             )}
+            {n > 0 && (
+              <div style={{ marginTop: 14, marginBottom: 14 }}>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    fontFamily: 'var(--font-body)',
+                    fontSize: 'var(--type-small)',
+                    color: 'var(--ink-60)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span>Slippage tolerance</span>
+                  <select
+                    value={slippageTolerance}
+                    onChange={(e) => setSlippageTolerance(Number(e.target.value))}
+                    style={{
+                      fontFamily: 'var(--font-body)',
+                      fontSize: 'var(--type-small)',
+                      padding: '6px 10px',
+                      borderRadius: 'var(--radius-input)',
+                      border: '1px solid var(--ink-12)',
+                      background: 'var(--surface)',
+                      color: 'var(--ink)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <option value={0.001}>0.1%</option>
+                    <option value={0.005}>0.5% (default)</option>
+                    <option value={0.01}>1%</option>
+                    <option value={0.02}>2%</option>
+                  </select>
+                  <span style={{ color: 'var(--ink-40)', fontSize: 'var(--type-caption)' }}>
+                    Min return: {formatDecimal(n * (1 - slippageTolerance), DISPLAY_DECIMALS)} USDC
+                  </span>
+                </label>
+              </div>
+            )}
             <Button
               variant="primary"
               size="lg"
@@ -157,7 +198,7 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                 const controller = new AbortController()
                 abortControllerRef.current = controller
                 try {
-                  const result = await submitWithdraw(n, address ?? '', sign, controller.signal)
+                  const result = await submitWithdraw(n, address ?? '', sign, controller.signal, slippageTolerance)
                   if (mountedRef.current) {
                     const hash = typeof result === 'string' ? result : result.hash
                     const queued = typeof result === 'object' ? Boolean(result.queued) : false

@@ -84,9 +84,14 @@ afterEach(() => {
 async function withTimeout<T>(api: Api, call: () => Promise<T>): Promise<T> {
   vi.useFakeTimers()
   vi.mocked(fetch).mockImplementation(hangingFetch)
-  const pending = call()
+  const pending = call().then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  )
   await vi.advanceTimersByTimeAsync(api.API_TIMEOUT_MS + 1)
-  return pending
+  const outcome = await pending
+  if ('error' in outcome) throw outcome.error
+  return outcome.value
 }
 
 function lastWarning(): string {
@@ -94,30 +99,26 @@ function lastWarning(): string {
 }
 
 describe('getProjects', () => {
-  it.each(failures)('falls back to local projects on $name', async ({ mock, reason }) => {
+  it.each(failures)('surfaces production errors on $name', async ({ mock }) => {
     const api = await loadApi()
     mock()
-    await expect(api.getProjects()).resolves.toEqual(selectProjects())
+    await expect(api.getProjects()).rejects.toThrow()
     expect(fetch).toHaveBeenCalledWith(
       `${API}/projects`,
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
-    expect(lastWarning()).toMatch(reason)
-    expect(lastWarning()).toContain('GET /projects failed')
+    expect(warn).not.toHaveBeenCalled()
   })
 
-  it('falls back when the request times out', async () => {
+  it('surfaces request timeouts', async () => {
     const api = await loadApi()
-    await expect(withTimeout(api, () => api.getProjects())).resolves.toEqual(selectProjects())
-    expect(lastWarning()).toContain(`timed out after ${api.API_TIMEOUT_MS}ms`)
+    await expect(withTimeout(api, () => api.getProjects())).rejects.toThrow()
   })
 
   it('never reports the literal "HTTP {res.status}" placeholder', async () => {
     const api = await loadApi()
     vi.mocked(fetch).mockResolvedValue(jsonResponse({}, 500))
-    await api.getProjects()
-    expect(lastWarning()).not.toContain('{res.status}')
-    expect(lastWarning()).toContain('HTTP 500')
+    await expect(api.getProjects()).rejects.toThrow('HTTP 500')
   })
 
   it('returns the API payload on success', async () => {
@@ -130,23 +131,17 @@ describe('getProjects', () => {
 })
 
 describe('getProjectsPaginated', () => {
-  it.each(failures)('falls back to a local page on $name', async ({ mock, reason }) => {
+  it.each(failures)('surfaces paginated production errors on $name', async ({ mock }) => {
     const api = await loadApi()
     mock()
-    const res = await api.getProjectsPaginated(1, 2)
-    expect(res.projects).toEqual(selectProjects().slice(0, 2))
-    expect(res.total).toBe(selectProjects().length)
-    expect(res.hasMore).toBe(selectProjects().length > 2)
+    await expect(api.getProjectsPaginated(1, 2)).rejects.toThrow()
     expect(fetch).toHaveBeenCalledWith(`${API}/projects?page=1&limit=2`, expect.anything())
-    expect(lastWarning()).toMatch(reason)
+    expect(warn).not.toHaveBeenCalled()
   })
 
-  it('falls back when the request times out', async () => {
+  it('surfaces request timeouts', async () => {
     const api = await loadApi()
-    const res = await withTimeout(api, () => api.getProjectsPaginated(2, 3))
-    expect(res.projects).toEqual(selectProjects().slice(3, 6))
-    expect(res.page).toBe(2)
-    expect(lastWarning()).toContain('timed out')
+    await expect(withTimeout(api, () => api.getProjectsPaginated(2, 3))).rejects.toThrow()
   })
 
   it('pages a plain array response client-side', async () => {
@@ -176,28 +171,23 @@ describe('getProjectsPaginated', () => {
 describe('getProject', () => {
   const id = selectProjects()[0].id
 
-  it.each(failures)('falls back to the local project on $name', async ({ mock, reason }) => {
+  it.each(failures)('surfaces production errors on $name', async ({ mock }) => {
     const api = await loadApi()
     mock()
-    await expect(api.getProject(id)).resolves.toEqual({
-      project: selectProjectById(id),
-      detail: selectProjectDetail(id),
-      verifiedMetadata: true,
-    })
+    await expect(api.getProject(id)).rejects.toThrow()
     expect(fetch).toHaveBeenCalledWith(`${API}/projects/${id}`, expect.anything())
-    expect(lastWarning()).toMatch(reason)
+    expect(warn).not.toHaveBeenCalled()
   })
 
-  it('falls back when the request times out', async () => {
+  it('surfaces request timeouts', async () => {
     const api = await loadApi()
-    const res = await withTimeout(api, () => api.getProject(id))
-    expect(res?.project).toEqual(selectProjectById(id))
+    await expect(withTimeout(api, () => api.getProject(id))).rejects.toThrow()
   })
 
-  it('returns null when the API fails and there is no local project', async () => {
+  it('surfaces not-found responses when there is no local project', async () => {
     const api = await loadApi()
     vi.mocked(fetch).mockResolvedValue(jsonResponse({}, 404))
-    await expect(api.getProject(99999)).resolves.toBeNull()
+    await expect(api.getProject(99999)).rejects.toThrow('HTTP 404')
   })
 
   it('returns the API payload on success', async () => {
@@ -211,24 +201,20 @@ describe('getProject', () => {
 describe('createInvestment', () => {
   const input = { projectId: 2, amount: 150 }
 
-  it.each(failures)('falls back to a local investment on $name', async ({ mock, reason }) => {
+  it.each(failures)('surfaces production errors on $name', async ({ mock }) => {
     const api = await loadApi()
     mock()
-    const res = await api.createInvestment(input)
-    expect(res).toMatchObject({ projectId: 2, amount: 150, projectUrl: '/projects/2' })
+    await expect(api.createInvestment(input)).rejects.toThrow()
     expect(fetch).toHaveBeenCalledWith(
       `${API}/investments`,
       expect.objectContaining({ method: 'POST', body: JSON.stringify(input) }),
     )
-    expect(lastWarning()).toMatch(reason)
-    expect(lastWarning()).toContain('POST /investments failed')
+    expect(warn).not.toHaveBeenCalled()
   })
 
-  it('falls back when the request times out', async () => {
+  it('surfaces request timeouts', async () => {
     const api = await loadApi()
-    const res = await withTimeout(api, () => api.createInvestment(input))
-    expect(res.projectId).toBe(2)
-    expect(lastWarning()).toContain('timed out')
+    await expect(withTimeout(api, () => api.createInvestment(input))).rejects.toThrow()
   })
 
   it('returns the created investment with a normalised projectUrl', async () => {
@@ -255,26 +241,23 @@ describe('createInvestment', () => {
 })
 
 describe('getPriceHistory', () => {
-  it.each(failures)('falls back to generated history on $name', async ({ mock, reason }) => {
+  it.each(failures)('surfaces production errors on $name', async ({ mock }) => {
     const api = await loadApi()
     mock()
-    const points = await api.getPriceHistory(1)
-    expect(points).toHaveLength(30)
+    await expect(api.getPriceHistory(1)).rejects.toThrow()
     expect(fetch).toHaveBeenCalledWith(`${API}/projects/1/price-history`, expect.anything())
-    expect(lastWarning()).toMatch(reason)
+    expect(warn).not.toHaveBeenCalled()
   })
 
-  it('falls back when the request times out', async () => {
+  it('surfaces request timeouts', async () => {
     const api = await loadApi()
-    const points = await withTimeout(api, () => api.getPriceHistory(1))
-    expect(points).toHaveLength(30)
+    await expect(withTimeout(api, () => api.getPriceHistory(1))).rejects.toThrow()
   })
 
-  it('falls back when the payload is not an array', async () => {
+  it('rejects when the payload is not an array', async () => {
     const api = await loadApi()
     vi.mocked(fetch).mockResolvedValue(jsonResponse({ points: [] }))
-    await expect(api.getPriceHistory(1)).resolves.toHaveLength(30)
-    expect(warn).toHaveBeenCalled()
+    await expect(api.getPriceHistory(1)).rejects.toThrow()
   })
 
   it('sorts API points chronologically', async () => {
