@@ -8,6 +8,7 @@ import { submitDeposit } from '../wallet/vault'
 import { useVault } from '../wallet/useVault'
 import { scrollToFirstError } from '../lib/scrollToError'
 import { getFriendlyErrorMessage } from '../lib/errorMessages'
+import { isNetworkMismatchError } from '../wallet/networkGuard'
 import { useWallet } from '../wallet/WalletProvider'
 import { selectPoolSummary } from '../state/selectors'
 import { roundToCents, formatDecimal, formatSharePrice, parseAmount } from '../lib/format'
@@ -134,8 +135,12 @@ export function Deposit({ onDone }: DepositProps) {
           return
         }
         clearPending()
-        const errorMessage =
-          e instanceof Error ? getFriendlyErrorMessage(e.message) : 'Transaction failed — please try again.'
+        // A wallet/app network mismatch message is already user-facing (#611).
+        const errorMessage = isNetworkMismatchError(e)
+          ? e.message
+          : e instanceof Error
+            ? getFriendlyErrorMessage(e.message)
+            : 'Transaction failed — please try again.'
         changeStep('amount')
         toast({
           tone: 'error',

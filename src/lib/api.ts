@@ -25,6 +25,29 @@ export function shouldShowDemoBadge(): boolean {
   return isDemoMode()
 }
 
+/** Requests slower than this are aborted and the call falls back (#608). */
+export const API_TIMEOUT_MS = 8000
+
+/**
+ * GET/POST `path` on the API and parse the JSON body. Rejects on a non-2xx
+ * status ("HTTP 503"), a timeout, a network error or a malformed body. Demo
+ * fallbacks are selected before calling this helper; production errors bubble up.
+ */
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS)
+  try {
+    const res = await fetch(`${API_URL}${path}`, { ...init, signal: controller.signal })
+    if (!res.ok) throw new ApiError({ status: res.status, message: `HTTP ${res.status}` })
+    return (await res.json()) as T
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error(`timed out after ${API_TIMEOUT_MS}ms`)
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export interface ProjectWithDetail {
 	project: Project
 	detail: ProjectDetail
@@ -77,9 +100,7 @@ export async function getProjectsPaginated(page = 1, pageSize = 12): Promise<Pag
 	}
 
 	try {
-		const res = await fetch(`${API_URL}/projects?page=${page}&limit=${pageSize}`)
-		if (!res.ok) throw new ApiError({ status: res.status, message: `HTTP ${res.status}` })
-		const data = await res.json()
+		const data = await apiFetch<unknown>(`/projects?page=${page}&limit=${pageSize}`)
 		if (Array.isArray(data)) {
 			const start = (page - 1) * pageSize
 			return {
@@ -104,9 +125,7 @@ export async function getProjects(): Promise<Project[]> {
   }
   if (isDemoMode()) return selectProjects()
   try {
-    const res = await fetch(`${API_URL}/projects`)
-    if (!res.ok) throw new ApiError({ status: res.status, message: `HTTP ${res.status}` })
-    return (await res.json()) as Project[]
+    return await apiFetch<Project[]>('/projects')
   } catch (error) {
     if (error instanceof ApiError) throw error
     throw new ApiError({ cause: error, message: 'Failed to fetch projects' })
@@ -134,9 +153,7 @@ export async function getProject(id: number): Promise<ProjectWithDetail | null> 
 	}
 
   try {
-    const res = await fetch(`${API_URL}/projects/${id}`)
-    if (!res.ok) throw new ApiError({ status: res.status, message: `HTTP ${res.status}` })
-    return (await res.json()) as ProjectWithDetail
+    return await apiFetch<ProjectWithDetail>(`/projects/${id}`)
   } catch (error) {
     if (error instanceof ApiError) throw error
     throw new ApiError({ cause: error, message: `Failed to fetch project ${id}` })
@@ -166,13 +183,11 @@ export async function createInvestment(input: { projectId: number; amount: numbe
   }
 
   try {
-    const res = await fetch(`${API_URL}/investments`, {
+    const data = await apiFetch<Investment>('/investments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     })
-    if (!res.ok) throw new ApiError({ status: res.status, message: `HTTP ${res.status}` })
-    const data = (await res.json()) as Investment
     return {
       ...data,
       projectUrl: `/projects/${encodeURIComponent(input.projectId)}`,
@@ -240,9 +255,7 @@ export async function getPriceHistory(projectId: number): Promise<PricePoint[]> 
 
   if (isDemoMode()) return makeMock()
   try {
-    const res = await fetch(`${API_URL}/projects/${projectId}/price-history`)
-    if (!res.ok) throw new ApiError({ status: res.status, message: `HTTP ${res.status}` })
-    const data = (await res.json()) as PricePoint[]
+    const data = await apiFetch<PricePoint[]>(`/projects/${projectId}/price-history`)
     // Sort ascending by date to ensure chronological order for charting
     return data.sort((a, b) => a.date.localeCompare(b.date))
   } catch (error) {

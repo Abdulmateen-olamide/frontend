@@ -45,7 +45,42 @@ export const STELLAR_NETWORK: StellarNetworkName = validateNetwork(
 export const STELLAR_NETWORK_UPPERCASE: StellarNetworkUpper =
   STELLAR_NETWORK === 'public' ? 'PUBLIC' : 'TESTNET'
 
-export const NETWORK_PASSPHRASE: string = PASSPHRASES[STELLAR_NETWORK]
+/**
+ * Passphrase transactions are built and signed with. Defaults to the selected
+ * network's; NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE overrides it so e2e runs can
+ * target a local stellar/quickstart ("Standalone Network ; February 2017").
+ */
+export const NETWORK_PASSPHRASE: string =
+  process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE || PASSPHRASES[STELLAR_NETWORK]
+
+const KNOWN_PASSPHRASES: Record<string, string> = {
+  [PASSPHRASES.public]: 'Mainnet',
+  [PASSPHRASES.testnet]: 'Testnet',
+  'Test SDF Future Network ; October 2022': 'Futurenet',
+  'Standalone Network ; February 2017': 'Standalone',
+}
+
+/** Human-readable name for a network passphrase ("Mainnet", "Testnet", …). */
+export function networkLabel(passphrase: string): string {
+  return KNOWN_PASSPHRASES[passphrase] ?? 'an unknown network'
+}
+
+/**
+ * Passphrase to sign with for a network. The build's own network returns
+ * NETWORK_PASSPHRASE so a local override is honoured.
+ */
+export function passphraseForNetwork(network: StellarNetworkUpper): string {
+  if (network === STELLAR_NETWORK_UPPERCASE) return NETWORK_PASSPHRASE
+  return PASSPHRASES[network === 'PUBLIC' ? 'public' : 'testnet']
+}
+
+/** True when the app builds mainnet transactions. */
+export const isMainnet: boolean = NETWORK_PASSPHRASE === PASSPHRASES.public
+
+/** Plain-HTTP endpoints are only legitimate for a local node (e2e, quickstart). */
+export function allowHttpFor(url: string): boolean {
+  return url.startsWith('http://')
+}
 
 export const HORIZON_URL: string =
   process.env.NEXT_PUBLIC_HORIZON_URL || DEFAULT_HORIZON_URLS[STELLAR_NETWORK]

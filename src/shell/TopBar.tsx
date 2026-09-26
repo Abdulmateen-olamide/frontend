@@ -10,6 +10,11 @@ import { useLocaleSwitcher } from '../i18n/LocaleProvider'
 import { LOCALE_LABELS, type Locale } from '../i18n/config'
 import { useWallet, shortAddress } from '../wallet/WalletProvider'
 import { useTheme } from '../theme/ThemeProvider'
+import { HORIZON_URL, NETWORK_PASSPHRASE, networkLabel } from '../config/network'
+import { networkMismatchMessage } from '../wallet/networkGuard'
+
+/** "Testnet", "Standalone", … — shown as a persistent pill on non-mainnet builds (#611). */
+const NETWORK_NAME = networkLabel(NETWORK_PASSPHRASE)
 
 const Mark = dynamic(() => import('../brand/Mark').then((m) => m.Mark), {
   ssr: false,
@@ -33,7 +38,15 @@ export function TopBar() {
   const router = useRouter()
   const t = useTranslations('Nav')
   useLocaleSwitcher()
-  const { connected, address, connecting, isDemo } = useWallet()
+  const {
+    connected,
+    address,
+    connecting,
+    isDemo,
+    networkMismatch,
+    walletNetworkPassphrase,
+    checkWalletNetwork,
+  } = useWallet()
   const { theme, toggle } = useTheme()
 
   const [networkOnline, setNetworkOnline] = useState(true)
@@ -55,7 +68,7 @@ export function TopBar() {
       currentController = controller
       const timeoutId = setTimeout(() => controller.abort(), 3000)
       try {
-        const res = await fetch('https://horizon-testnet.stellar.org', {
+        const res = await fetch(HORIZON_URL, {
           signal: controller.signal,
           cache: 'no-store',
         })
@@ -186,9 +199,11 @@ export function TopBar() {
       </nav>
 
       <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <NetworkPill passphrase={NETWORK_PASSPHRASE} />
+
         <span
           role="status"
-          aria-label={networkOnline ? t('networkStatus') : 'Offline'}
+          aria-label={networkOnline ? `Network: ${NETWORK_NAME} online` : 'Offline'}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -211,7 +226,7 @@ export function TopBar() {
               boxShadow: networkOnline ? '0 0 0 3px var(--growth-12)' : 'none',
             }}
           />
-          {networkOnline ? t('testnet') : 'Offline'}
+          {networkOnline ? null : 'Offline'}
         </span>
 
         <button
@@ -263,7 +278,80 @@ export function TopBar() {
         Offline — showing cached data
       </div>
     )}
+    {networkMismatch && walletNetworkPassphrase && (
+      <div
+        role="alert"
+        data-testid="network-mismatch"
+        style={{
+          position: 'sticky',
+          top: 68,
+          zIndex: 199,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexWrap: 'wrap',
+          gap: 12,
+          padding: '8px 16px',
+          background: 'var(--ember)',
+          color: '#fff',
+          fontFamily: 'var(--font-body)',
+          fontSize: 13,
+          fontWeight: 500,
+        }}
+      >
+        <span>
+          {networkMismatchMessage(walletNetworkPassphrase, NETWORK_PASSPHRASE)} Signing is
+          blocked until they match.
+        </span>
+        <button
+          type="button"
+          onClick={() => void checkWalletNetwork()}
+          style={{
+            fontFamily: 'var(--font-body)',
+            fontSize: 13,
+            fontWeight: 600,
+            padding: '4px 12px',
+            borderRadius: 'var(--radius-pill)',
+            border: '1px solid #fff',
+            background: 'transparent',
+            color: '#fff',
+            cursor: 'pointer',
+          }}
+        >
+          Check again
+        </button>
+      </div>
+    )}
     </>
+  )
+}
+
+/**
+ * Persistent network pill ("TESTNET", "STANDALONE", …) on every non-mainnet
+ * build, so nobody mistakes test balances for real ones (#611).
+ */
+export function NetworkPill({ passphrase }: { passphrase: string }) {
+  const name = networkLabel(passphrase)
+  if (name === 'Mainnet') return null
+  return (
+    <span
+      data-testid="network-pill"
+      title={`This build runs on the Stellar ${name} — balances have no real value.`}
+      style={{
+        fontFamily: 'var(--font-data)',
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: '0.08em',
+        color: 'var(--ink)',
+        background: 'var(--solar-12)',
+        border: '1px solid var(--solar)',
+        borderRadius: 'var(--radius-pill)',
+        padding: '3px 10px',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {name.toUpperCase()}
+    </span>
   )
 }
 
@@ -643,7 +731,7 @@ function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
             <span
               style={{ fontFamily: 'var(--font-body)', fontSize: 11.5, color: 'var(--ink-40)' }}
             >
-              {isDemo ? t('demoSession') : t('testnet')}
+              {isDemo ? t('demoSession') : NETWORK_NAME}
             </span>
           </div>
           <div style={{ height: 1, background: 'var(--ink-12)', margin: '4px 0' }} />

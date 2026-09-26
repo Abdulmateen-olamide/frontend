@@ -7,6 +7,10 @@ import {
   STELLAR_NETWORK,
   HORIZON_URL,
   SOROBAN_RPC_URL,
+  NETWORK_PASSPHRASE,
+  networkLabel,
+  isMainnet,
+  allowHttpFor,
 } from './network'
 
 describe('network configuration', () => {
@@ -45,5 +49,24 @@ describe('network configuration', () => {
     expect(getExplorerUrl(tx)).toContain(`/tx/${tx}`)
     expect(getExplorerUrl(addr)).toContain(`/account/${addr}`)
     expect(getExplorerUrl('short-val')).toBeUndefined()
+  })
+})
+
+describe('network labels and passphrases (#611)', () => {
+  it('names the well-known passphrases', () => {
+    expect(networkLabel('Public Global Stellar Network ; September 2015')).toBe('Mainnet')
+    expect(networkLabel('Test SDF Network ; September 2015')).toBe('Testnet')
+    expect(networkLabel('Standalone Network ; February 2017')).toBe('Standalone')
+    expect(networkLabel('something else')).toBe('an unknown network')
+  })
+
+  it('builds testnet transactions by default', () => {
+    expect(NETWORK_PASSPHRASE).toBe('Test SDF Network ; September 2015')
+    expect(isMainnet).toBe(false)
+  })
+
+  it('only allows plain HTTP for http:// URLs', () => {
+    expect(allowHttpFor('http://localhost:8000/rpc')).toBe(true)
+    expect(allowHttpFor('https://soroban-testnet.stellar.org')).toBe(false)
   })
 })
