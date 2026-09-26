@@ -40,7 +40,7 @@ export function useVault(): VaultState {
     setLoading(true)
     setError(null)
 
-    Promise.all([fetchSharePrice(network), fetchTotalAssets(network)])
+    Promise.all([fetchSharePrice(address), fetchTotalAssets(address, network)])
       .then(([price, assets]) => {
         // fetchSharePrice resolves a decimal string — coerce for numeric state.
         setSharePrice(Number(price))

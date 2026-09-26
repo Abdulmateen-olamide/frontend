@@ -167,7 +167,7 @@ style={{ color: 'var(--growth)' }}
 ### Related Files
 
 - Design tokens: `src/styles/tokens/colors.css`
-- Test page: `src/app/contrast-test/page.tsx`
+- Test page: `src/app/(dev)/contrast-test/page.tsx` (dev-only, 404 in production)
 - Audit report: `CONTRAST_AUDIT.md`
 - Implementation summary: `IMPLEMENTATION_SUMMARY.md`
 
