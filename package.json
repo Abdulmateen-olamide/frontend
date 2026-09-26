@@ -23,7 +23,9 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:chain": "playwright test --config playwright.chain.config.ts",
     "bundle:check": "node scripts/check-bundle-size.js",
     "typecheck:coverage": "node scripts/check-type-coverage.js",
     "prepare": "husky"
@@ -50,6 +52,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^4.1.9",
     "@vitest/ui": "^4.1.9",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.9",

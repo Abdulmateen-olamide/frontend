@@ -9,7 +9,9 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { STELLAR_NETWORK_UPPERCASE } from '../config/network'
+import { STELLAR_NETWORK_UPPERCASE, passphraseForNetwork } from '../config/network'
+import { NetworkMismatchError, isNetworkMismatch } from './networkGuard'
+import type { Networks } from '@creit.tech/stellar-wallets-kit/types'
 
 interface WalletContextValue {
   address: string | null
@@ -26,6 +28,12 @@ interface WalletContextValue {
   sign: (xdr: string) => Promise<string>
   network: 'PUBLIC' | 'TESTNET'
   setNetwork: (network: 'PUBLIC' | 'TESTNET') => void
+  /** Passphrase the connected wallet reports, or null if unknown / not connected. */
+  walletNetworkPassphrase: string | null
+  /** True when the wallet is on a different network than the app (#611). */
+  networkMismatch: boolean
+  /** Re-read the wallet's network; resolves true when it matches the app. */
+  checkWalletNetwork: () => Promise<boolean>
 }
 
 const WalletContext = createContext<WalletContextValue | null>(null)
@@ -57,6 +65,8 @@ export function WalletProvider({ children }: {children: ReactNode}) {
   const [retryCount, setRetryCount] = useState(0)
   const [network, setNetworkState] = useState<'PUBLIC' | 'TESTNET'>(getInitialNetwork)
   const initedNetworkRef = useRef<'PUBLIC' | 'TESTNET' | null>(null)
+  const [walletNetworkPassphrase, setWalletNetworkPassphrase] = useState<string | null>(null)
+  const appPassphrase = passphraseForNetwork(network)
 
   const persist = useCallback((addr: string, walletId: string) => {
     try {
@@ -90,14 +100,43 @@ export function WalletProvider({ children }: {children: ReactNode}) {
 
   const ensureInit = useCallback(async () => {
     if (initedNetworkRef.current === network) return
-    const { StellarWalletsKit, Networks } = await import('@creit.tech/stellar-wallets-kit')
+    const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
     const { defaultModules } = await import('@creit.tech/stellar-wallets-kit/modules/utils')
+    const modules = defaultModules()
+    // e2e builds only: a keypair-backed module so Playwright can sign without
+    // a browser extension (#607). Never enabled on mainnet.
+    if (process.env.NEXT_PUBLIC_E2E_TEST_WALLET === 'true' && STELLAR_NETWORK_UPPERCASE !== 'PUBLIC') {
+      const { E2ETestWalletModule } = await import('./e2eTestWallet')
+      modules.unshift(new E2ETestWalletModule())
+    }
     StellarWalletsKit.init({
-      modules: defaultModules(),
-      network: network === 'TESTNET' ? Networks.TESTNET : Networks.PUBLIC,
+      modules,
+      network: appPassphrase as Networks,
     })
     initedNetworkRef.current = network
-  }, [network])
+  }, [network, appPassphrase])
+
+  /** Ask the wallet which network it is on. null when the wallet can't say. */
+  const readWalletNetwork = useCallback(async (): Promise<string | null> => {
+    try {
+      await ensureInit()
+      const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
+      const { networkPassphrase } = await StellarWalletsKit.getNetwork()
+      const passphrase = networkPassphrase || null
+      setWalletNetworkPassphrase(passphrase)
+      return passphrase
+    } catch {
+      // Not every wallet exposes its network; don't block on it.
+      setWalletNetworkPassphrase(null)
+      return null
+    }
+  }, [ensureInit])
+
+  const checkWalletNetwork = useCallback(async (): Promise<boolean> => {
+    if (isDemo || !address) return true
+    const walletPassphrase = await readWalletNetwork()
+    return !isNetworkMismatch(walletPassphrase, appPassphrase)
+  }, [isDemo, address, readWalletNetwork, appPassphrase])
 
   useEffect(() => {
     let saved: string | null = null
@@ -122,12 +161,13 @@ export function WalletProvider({ children }: {children: ReactNode}) {
           await ensureInit()
           const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
           StellarWalletsKit.setWallet(savedWallet)
+          await readWalletNetwork()
         } catch {
           /* the wallet may be uninstalled now — the address still shows */
         }
       })()
     }
-  }, [ensureInit])
+  }, [ensureInit, readWalletNetwork])
 
   const connectWithRetry = useCallback(async (attempt = 0): Promise<void> => {
     setConnecting(true)
@@ -150,6 +190,7 @@ export function WalletProvider({ children }: {children: ReactNode}) {
       setIsDemo(false)
       setRetryCount(0)
       persist(addr, walletId)
+      await readWalletNetwork()
     } catch (e) {
       const isTimeout = e instanceof Error && e.message === 'timeout'
       const isCancelled = e instanceof Error && /dismiss|cancel|closed/i.test(e.message)
@@ -169,7 +210,7 @@ export function WalletProvider({ children }: {children: ReactNode}) {
     } finally {
       setConnecting(false)
     }
-  }, [ensureInit, persist])
+  }, [ensureInit, persist, readWalletNetwork])
 
   const connect = useCallback(async () => {
     setRetryCount(0)
@@ -193,14 +234,19 @@ export function WalletProvider({ children }: {children: ReactNode}) {
     async (xdr: string): Promise<string> => {
       if (isDemo) throw new Error('demo')
       await ensureInit()
-      const { StellarWalletsKit, Networks } = await import('@creit.tech/stellar-wallets-kit')
+      const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
+      // Block before the wallet prompt: a mismatched network can only fail (#611).
+      const walletPassphrase = await readWalletNetwork()
+      if (isNetworkMismatch(walletPassphrase, appPassphrase)) {
+        throw new NetworkMismatchError(walletPassphrase!, appPassphrase)
+      }
       const result = await StellarWalletsKit.signTransaction(xdr, {
-        networkPassphrase: network === 'TESTNET' ? Networks.TESTNET : Networks.PUBLIC,
+        networkPassphrase: appPassphrase,
         address: address ?? undefined,
       })
       return result.signedTxXdr
     },
-    [isDemo, ensureInit, address, network],
+    [isDemo, ensureInit, address, appPassphrase, readWalletNetwork],
   )
 
   const disconnect = useCallback(() => {
@@ -208,6 +254,7 @@ export function WalletProvider({ children }: {children: ReactNode}) {
     setIsDemo(false)
     setConnectionError(null)
     setRetryCount(0)
+    setWalletNetworkPassphrase(null)
     try {
       localStorage.removeItem('hb-address')
       localStorage.removeItem('hb-wallet')
@@ -236,6 +283,10 @@ export function WalletProvider({ children }: {children: ReactNode}) {
         sign,
         network,
         setNetwork,
+        walletNetworkPassphrase,
+        networkMismatch:
+          !isDemo && address !== null && isNetworkMismatch(walletNetworkPassphrase, appPassphrase),
+        checkWalletNetwork,
       }}
     >
       {children}

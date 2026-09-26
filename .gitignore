@@ -51,3 +51,11 @@ dist/
 # IDE
 .vscode/
 .idea/
+
+# test output
+/coverage
+/test-results
+/playwright-report
+
+# e2e: cloned Heliobond/contracts for the local-network journey
+/.e2e

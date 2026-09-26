@@ -24,3 +24,28 @@ jobs:
           echo "Basic CI passed :heart:"
           echo "Build check skipped for velocity - auto-merge handles review"
           # If you want strict checks later, re-enable bun build / npm build here
+
+  unit:
+    name: unit tests + coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        # bun.lock is out of sync with package.json (#600); don't freeze it yet.
+        run: bun install
+
+      # Fails when src/lib/api.ts or src/wallet/vault.ts drop below 80% line
+      # coverage, or src/lib / src/wallet regress (#608). See vitest.config.mts.
+      - name: Vitest with coverage thresholds
+        run: bun run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage
+          retention-days: 7

@@ -2,6 +2,8 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  // The on-chain journey needs a local network; see playwright.chain.config.ts.
+  testIgnore: ['chain/**'],
   timeout: 60_000,
   retries: 0,
   workers: 1,
