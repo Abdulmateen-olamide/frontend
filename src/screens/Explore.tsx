@@ -3,7 +3,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { useTranslations } from 'next-intl'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { ProjectCard, Tag, WatchlistButton } from '../components'
+import { ProjectCard, Tag, WatchlistButton, DemoDataBadge } from '../components'
 import { type Project, type ProjectType } from '../data'
 import { selectProjects } from '../state/selectors'
 import { getProjectsPaginated } from '../lib/api'
@@ -76,6 +76,7 @@ export function Explore({ onOpen }: ExploreProps) {
 
   return (
     <main id="main-content" style={{ maxWidth: 1320, margin: '0 auto', padding: '48px 32px 80px' }}>
+      <DemoDataBadge style={{ marginBottom: 16 }} />
       <style>{`
         .hb-projects-grid > * {
           min-width: 0;

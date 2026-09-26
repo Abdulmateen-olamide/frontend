@@ -16,6 +16,7 @@ export interface VaultState {
 export function useVault(): VaultState {
   const { address, isDemo, network: walletNetwork } = useWallet()
   // Allow explicit override via env var, otherwise use wallet's network, fallback to public
+  // WalletProvider uses 'TESTNET'/'PUBLIC', normalize to lowercase 'testnet'/'public' for vault.ts
   const network = (process.env.NEXT_PUBLIC_STELLAR_NETWORK?.toLowerCase() ||
     walletNetwork?.toLowerCase() ||
     'public') as 'public' | 'testnet'
@@ -40,7 +41,8 @@ export function useVault(): VaultState {
     setLoading(true)
     setError(null)
 
-    Promise.all([fetchSharePrice(network), fetchTotalAssets(network)])
+    // Pass connected address as sourceAddress, network as second argument
+    Promise.all([fetchSharePrice(address, network), fetchTotalAssets(address, network)])
       .then(([price, assets]) => {
         // fetchSharePrice resolves a decimal string — coerce for numeric state.
         setSharePrice(Number(price))

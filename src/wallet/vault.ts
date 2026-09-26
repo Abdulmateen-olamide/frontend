@@ -178,27 +178,61 @@ async function sorobanSimulate(
   const result = await withTimeout(
     server.simulateTransaction(tx),
     'Stellar RPC timed out during simulation',
-  )
-  if ('error' in result) throw new Error(`Soroban simulate error: ${result.error}`)
+  ) as { error?: string; result?: { retval: unknown } }
+  if ('error' in result) {
+    const error = result.error
+    // Distinguish programming errors (bad address, bad args) from network errors
+    // Invalid address/contract errors should NOT mark the app as offline
+    const isProgrammingError =
+      typeof error === 'string' &&
+      (error.includes('Invalid address') ||
+        error.includes('invalid address') ||
+        error.includes('Malformed') ||
+        error.includes('malformed') ||
+        error.includes('Contract not found') ||
+        error.includes('contract not found') ||
+        error.includes('not a valid'))
+    if (isProgrammingError) {
+      throw new Error(`Soroban simulate error: ${error}`)
+    }
+    throw new Error(`Soroban simulate error: ${error}`)
+  }
   if (!result.result) throw new Error('Soroban simulate returned no result')
   return result.result.retval
 }
 
 /**
- * Read share_price from the on-chain vault.
+ * Read share price from the on-chain vault using convert_to_assets(10^7).
  * Throws when NEXT_PUBLIC_VAULT_CONTRACT_ID is not set — callers should catch
  * and fall back to the mock value.
  */
-export async function fetchSharePrice(sourceAddress: string): Promise<string> {
+export async function fetchSharePrice(
+  sourceAddress: string,
+  network = STELLAR_NETWORK,
+): Promise<string> {
   if (!CONTRACT_ID) throw new Error('NEXT_PUBLIC_VAULT_CONTRACT_ID not set')
   if (offline) return formatSharePrice(cachedSharePrice)
-  const { scValToNative } = await import('@stellar/stellar-sdk')
+  const { scValToNative, nativeToScVal } = await import('@stellar/stellar-sdk')
   try {
-    const retval = await sorobanSimulate(sourceAddress, 'share_price')
+    // InvestmentVault doesn't have share_price(), compute from convert_to_assets(1 share = 10^7 stroops)
+    const oneShare = nativeToScVal(BigInt(10 ** SHARE_PRICE_DECIMALS), { type: 'i128' })
+    const retval = await sorobanSimulate(sourceAddress, 'convert_to_assets', [oneShare], network)
     cachedSharePrice = Number(scValToNative(retval)) / 10 ** SHARE_PRICE_DECIMALS
     return formatSharePrice(cachedSharePrice)
-  } catch {
-    setOffline(true)
+  } catch (e) {
+    // Don't mark offline for programming errors (invalid address, bad contract, etc.)
+    const msg = e instanceof Error ? e.message : String(e)
+    const isProgrammingError =
+      msg.includes('Invalid address') ||
+      msg.includes('invalid address') ||
+      msg.includes('Malformed') ||
+      msg.includes('malformed') ||
+      msg.includes('Contract not found') ||
+      msg.includes('contract not found') ||
+      msg.includes('not a valid')
+    if (!isProgrammingError) {
+      setOffline(true)
+    }
     return formatSharePrice(cachedSharePrice)
   }
 }
@@ -218,8 +252,19 @@ export async function fetchTotalAssets(
     const retval = await sorobanSimulate(sourceAddress, 'total_assets', [], network)
     cachedTotalAssets = Number(scValToNative(retval))
     return cachedTotalAssets
-  } catch {
-    setOffline(true)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    const isProgrammingError =
+      msg.includes('Invalid address') ||
+      msg.includes('invalid address') ||
+      msg.includes('Malformed') ||
+      msg.includes('malformed') ||
+      msg.includes('Contract not found') ||
+      msg.includes('contract not found') ||
+      msg.includes('not a valid')
+    if (!isProgrammingError) {
+      setOffline(true)
+    }
     return cachedTotalAssets ?? 0
   }
 }
@@ -238,7 +283,19 @@ export async function fetchUtilizationBps(
   try {
     const retval = await sorobanSimulate(sourceAddress, 'get_utilization_bps', [], network)
     return Number(scValToNative(retval))
-  } catch {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    const isProgrammingError =
+      msg.includes('Invalid address') ||
+      msg.includes('invalid address') ||
+      msg.includes('Malformed') ||
+      msg.includes('malformed') ||
+      msg.includes('Contract not found') ||
+      msg.includes('contract not found') ||
+      msg.includes('not a valid')
+    if (!isProgrammingError) {
+      setOffline(true)
+    }
     return 0
   }
 }
@@ -286,6 +343,7 @@ async function waitForTransaction(hash: string): Promise<TransactionConfirmation
  * @param amount  USDC amount (integer stroops internally)
  * @param address Stellar address of the depositor (source account)
  * @param sign    Signing function from WalletProvider
+ * @param slippageTolerance  Slippage tolerance as decimal (e.g., 0.005 = 0.5%)
  * @returns       Transaction hash (real or placeholder)
  */
 export async function submitDeposit(
@@ -293,6 +351,7 @@ export async function submitDeposit(
   address: string,
   sign: (xdr: string) => Promise<string>,
   signal?: AbortSignal,
+  slippageTolerance = 0.005,
 ): Promise<string> {
   if (!CONTRACT_ID) {
     return new Promise<string>((resolve, reject) => {
@@ -330,7 +389,10 @@ export async function submitDeposit(
   // USDC uses 7 decimal places on Stellar (stroops-equivalent for SAC tokens).
   // The contract expects the raw integer amount scaled by 10^7.
   const amountScVal = nativeToScVal(BigInt(Math.round(amount * 1e7)), { type: 'i128' })
-  const minSharesScVal = nativeToScVal(BigInt(0), { type: 'i128' })
+  // Compute min_shares from preview: shares = amount / share_price, then apply slippage
+  const previewShares = amount / cachedSharePrice
+  const minShares = Math.floor(previewShares * (1 - slippageTolerance) * 1e7)
+  const minSharesScVal = nativeToScVal(BigInt(minShares), { type: 'i128' })
   const networkPassphrase = STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
 
   const tx = new TransactionBuilder(account, { fee: '100', networkPassphrase })
@@ -341,7 +403,7 @@ export async function submitDeposit(
   const simResult = await withTimeout(
     server.simulateTransaction(tx),
     'Stellar RPC timed out during simulation',
-  )
+  ) as { error?: string; result?: unknown }
   if ('error' in simResult) throw new Error(`Simulation failed: ${simResult.error}`)
 
   const assembled = rpc.assembleTransaction(tx, simResult).build()
@@ -351,7 +413,7 @@ export async function submitDeposit(
   const sendResult = await withTimeout(
     server.sendTransaction(signedTx),
     'Stellar RPC timed out submitting transaction',
-  )
+  ) as { status: string; hash: string; errorResult?: unknown }
   if (sendResult.status === 'ERROR')
     throw new Error(`Send failed: ${JSON.stringify(sendResult.errorResult)}`)
 
@@ -368,6 +430,7 @@ export async function submitDeposit(
  * @param amount  USDC amount to withdraw
  * @param address Stellar address of the withdrawer
  * @param sign    Signing function from WalletProvider
+ * @param slippageTolerance  Slippage tolerance as decimal (e.g., 0.005 = 0.5%)
  * @returns       WithdrawResult with hash and queued status
  */
 export async function submitWithdraw(
@@ -375,6 +438,7 @@ export async function submitWithdraw(
   address: string,
   sign: (xdr: string) => Promise<string>,
   signal?: AbortSignal,
+  slippageTolerance = 0.005,
 ): Promise<WithdrawResult> {
   if (!CONTRACT_ID) {
     return new Promise<WithdrawResult>((resolve, reject) => {
@@ -409,8 +473,12 @@ export async function submitWithdraw(
     horizon.loadAccount(address),
     'Stellar Horizon timed out loading account',
   )
-  const sharesScVal = nativeToScVal(BigInt(Math.round(amount * 1e7)), { type: 'i128' })
-  const minAssetsScVal = nativeToScVal(BigInt(0), { type: 'i128' })
+  // Convert USDC amount to shares (shares = amount / share_price * 1e7)
+  const shares = Math.round((amount / cachedSharePrice) * 1e7)
+  const sharesScVal = nativeToScVal(BigInt(shares), { type: 'i128' })
+  // Compute min_usdc_return from preview with slippage tolerance
+  const minUsdcReturn = Math.floor(amount * (1 - slippageTolerance) * 1e7)
+  const minAssetsScVal = nativeToScVal(BigInt(minUsdcReturn), { type: 'i128' })
   const networkPassphrase = STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
 
   const tx = new TransactionBuilder(account, { fee: '100', networkPassphrase })
@@ -421,7 +489,7 @@ export async function submitWithdraw(
   const simResult = await withTimeout(
     server.simulateTransaction(tx),
     'Stellar RPC timed out during simulation',
-  )
+  ) as { error?: string; result?: unknown }
   if ('error' in simResult) throw new Error(`Simulation failed: ${simResult.error}`)
 
   const assembled = rpc.assembleTransaction(tx, simResult).build()
@@ -431,7 +499,7 @@ export async function submitWithdraw(
   const sendResult = await withTimeout(
     server.sendTransaction(signedTx),
     'Stellar RPC timed out submitting transaction',
-  )
+  ) as { status: string; hash: string; errorResult?: unknown }
   if (sendResult.status === 'ERROR')
     throw new Error(`Send failed: ${JSON.stringify(sendResult.errorResult)}`)
 
@@ -609,7 +677,7 @@ export async function submitClaim(
   let simResult = await withTimeout(
     server.simulateTransaction(tx),
     'Stellar RPC timed out during simulation',
-  )
+  ) as { error?: string; result?: unknown }
 
   // If parameterless claim() fails simulation, try passing claimant address
   if ('error' in simResult) {
@@ -622,7 +690,7 @@ export async function submitClaim(
       const fallbackSim = await withTimeout(
         server.simulateTransaction(fallbackTx),
         'Stellar RPC timed out during simulation',
-      )
+      ) as { error?: string; result?: unknown }
       if (!('error' in fallbackSim)) {
         tx = fallbackTx
         simResult = fallbackSim
@@ -641,7 +709,7 @@ export async function submitClaim(
   const sendResult = await withTimeout(
     server.sendTransaction(signedTx),
     'Stellar RPC timed out submitting transaction',
-  )
+  ) as { status: string; hash: string; errorResult?: unknown }
   if (sendResult.status === 'ERROR')
     throw new Error(`Send failed: ${JSON.stringify(sendResult.errorResult)}`)
 

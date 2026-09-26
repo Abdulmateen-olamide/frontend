@@ -19,6 +19,7 @@ const ERROR_CODE_MAP: Record<string, string> = {
   server_error: 'We are having trouble right now - please try again shortly.',
   internal_error: 'Something went wrong on our side - please try again.',
   unexpected_error: 'Something went wrong - please try again.',
+  slippage_limit_exceeded: 'Price moved unfavorably — please refresh the quote and try again.',
   '500': 'We are having trouble right now - please try again shortly.',
   '502': 'We are having trouble right now - please try again shortly.',
   '503': 'We are having trouble right now - please try again shortly.',

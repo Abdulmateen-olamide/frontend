@@ -3,6 +3,7 @@ import { useTranslations } from 'next-intl'
 import {
   Badge,
   Button,
+  DemoDataBadge,
   PinIcon,
   ScoreGauge,
   ShieldCheckIcon,
@@ -69,6 +70,7 @@ export const ProjectDetail = memo(function ProjectDetail({
   )
   return (
     <main id="main-content" style={{ maxWidth: 860, margin: '0 auto', padding: '40px 24px 96px' }}>
+      <DemoDataBadge style={{ marginBottom: 16 }} />
       {onBack && (
         <button
           type="button"

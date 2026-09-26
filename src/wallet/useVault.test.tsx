@@ -1,0 +1,100 @@
+import { renderHook, act, waitFor } from '@testing-library/react'
+import { useVault } from './useVault'
+import { WalletProvider } from './WalletProvider'
+import * as vaultModule from './vault'
+
+const mockFetchSharePrice = vi.fn()
+const mockFetchTotalAssets = vi.fn()
+
+vi.mock('./vault', () => ({
+  fetchSharePrice: (...args: unknown[]) => mockFetchSharePrice(...args),
+  fetchTotalAssets: (...args: unknown[]) => mockFetchTotalAssets(...args),
+}))
+
+vi.mock('../state/selectors', () => ({
+  selectSharePrice: () => 1.0,
+  selectTotalAssets: () => 1000,
+}))
+
+const TEST_ADDRESS = 'GBQHWXVZ2K4M6N8P3R5T7W9YA2C4E6G8J3L5Q7S9U2X4Z6B8D1F3H59XQ'
+
+function createWrapper() {
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return (
+      <WalletProvider>
+        {children}
+      </WalletProvider>
+    )
+  }
+}
+
+describe('useVault', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    // Mock contract ID and RPC URL
+    vi.stubEnv('NEXT_PUBLIC_VAULT_CONTRACT_ID', 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH')
+    vi.stubEnv('NEXT_PUBLIC_STELLAR_NETWORK', 'testnet')
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllEnvs()
+  })
+
+  it('passes connected address and network to fetchSharePrice and fetchTotalAssets', async () => {
+    mockFetchSharePrice.mockResolvedValue('1.0000000')
+    mockFetchTotalAssets.mockResolvedValue(1000000)
+
+    const { result } = renderHook(() => useVault(), {
+      wrapper: createWrapper(),
+    })
+
+    // Wait for the effect to run
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false)
+    })
+
+    // Verify fetchSharePrice was called with address and network
+    expect(mockFetchSharePrice).toHaveBeenCalledWith(TEST_ADDRESS, 'testnet')
+    // Verify fetchTotalAssets was called with address and network
+    expect(mockFetchTotalAssets).toHaveBeenCalledWith(TEST_ADDRESS, 'testnet')
+  })
+
+  it('passes network from WalletProvider when NEXT_PUBLIC_STELLAR_NETWORK not set', async () => {
+    vi.unstubAllEnvs()
+    vi.stubEnv('NEXT_PUBLIC_VAULT_CONTRACT_ID', 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH')
+    // Don't set NEXT_PUBLIC_STELLAR_NETWORK, should use wallet's network
+
+    mockFetchSharePrice.mockResolvedValue('1.0000000')
+    mockFetchTotalAssets.mockResolvedValue(1000000)
+
+    const { result } = renderHook(() => useVault(), {
+      wrapper: createWrapper(),
+    })
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false)
+    })
+
+    // WalletProvider defaults to TESTNET (from STELLAR_NETWORK_UPPERCASE)
+    expect(mockFetchSharePrice).toHaveBeenCalledWith(TEST_ADDRESS, 'testnet')
+    expect(mockFetchTotalAssets).toHaveBeenCalledWith(TEST_ADDRESS, 'testnet')
+  })
+
+  it('does not call fetchers when no contract ID', async () => {
+    vi.unstubAllEnvs()
+    // No NEXT_PUBLIC_VAULT_CONTRACT_ID
+
+    const { result } = renderHook(() => useVault(), {
+      wrapper: createWrapper(),
+    })
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false)
+    })
+
+    expect(mockFetchSharePrice).not.toHaveBeenCalled()
+    expect(mockFetchTotalAssets).not.toHaveBeenCalled()
+  })
+})
