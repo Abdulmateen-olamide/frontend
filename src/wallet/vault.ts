@@ -29,6 +29,7 @@ import {
   passphraseForNetwork,
 } from '../config/network'
 import type { xdr as XdrTypes } from '@stellar/stellar-sdk'
+import { notifyTransactionConfirmed } from './vaultEvents'
 
 /** USDC and HBS shares are i128 values with 7 decimals on-chain. */
 const SCALE = 1e7
@@ -454,9 +455,9 @@ export async function submitDeposit(
   if (!CONTRACT_ID) {
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
-        resolve(
-          `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`,
-        )
+        const demoHash = `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`
+        notifyTransactionConfirmed(demoHash, 'deposit')
+        resolve(demoHash)
       }, SIMULATED_DEPOSIT_DELAY_MS)
       if (signal) {
         signal.addEventListener('abort', () => {
@@ -482,6 +483,7 @@ export async function submitDeposit(
     ],
     sign,
   )
+  notifyTransactionConfirmed(hash, 'deposit')
   return hash
 }
 
@@ -509,6 +511,7 @@ export async function submitWithdraw(
       const timer = setTimeout(() => {
         const demoHash = `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`
         const isQueued = amount > 236
+        notifyTransactionConfirmed(demoHash, 'withdraw')
         resolve(createWithdrawResult(demoHash, isQueued, isQueued ? 1 : undefined, amount))
       }, SIMULATED_WITHDRAW_DELAY_MS)
       if (signal) {
@@ -656,7 +659,9 @@ export async function submitWithdraw(
     }
   }
 
-  return createWithdrawResult(hash, queued, position ?? (queued ? 1 : undefined), estimatedAmount)
+  const result = createWithdrawResult(hash, queued, position ?? (queued ? 1 : undefined), estimatedAmount)
+  notifyTransactionConfirmed(hash, 'withdraw')
+  return result
 }
 
 /**
@@ -670,9 +675,9 @@ export async function submitClaim(
   if (!CONTRACT_ID) {
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
-        resolve(
-          `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`,
-        )
+        const demoHash = `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`
+        notifyTransactionConfirmed(demoHash, 'claim')
+        resolve(demoHash)
       }, 1500)
       if (signal) {
         signal.addEventListener('abort', () => {
@@ -690,6 +695,7 @@ export async function submitClaim(
   // claim() is permissionless and takes no arguments; it pays queued
   // withdrawals in FIFO order to their owners.
   const { hash } = await invokeSigned(address, 'claim', [], sign)
+  notifyTransactionConfirmed(hash, 'claim')
   return hash
 }
 
@@ -703,9 +709,12 @@ export async function submitClaimYield(
 ): Promise<string> {
   if (!CONTRACT_ID) {
     await new Promise((resolve) => setTimeout(resolve, 1500))
-    return `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`
+    const demoHash = `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`
+    notifyTransactionConfirmed(demoHash, 'claim_yield')
+    return demoHash
   }
   const { Address } = await import('@stellar/stellar-sdk')
   const { hash } = await invokeSigned(address, 'claim_yield', [new Address(address).toScVal()], sign)
+  notifyTransactionConfirmed(hash, 'claim_yield')
   return hash
 }
