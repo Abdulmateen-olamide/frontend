@@ -37,7 +37,13 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS)
   try {
-    const res = await fetch(`${API_URL}${path}`, { ...init, signal: controller.signal })
+    const isServer = typeof window === 'undefined'
+    const fetchInit: RequestInit = {
+      ...init,
+      signal: controller.signal,
+      ...(isServer ? { next: { revalidate: 60 } } : {}),
+    }
+    const res = await fetch(`${API_URL}${path}`, fetchInit)
     if (!res.ok) throw new ApiError({ status: res.status, message: `HTTP ${res.status}` })
     return (await res.json()) as T
   } catch (error) {
