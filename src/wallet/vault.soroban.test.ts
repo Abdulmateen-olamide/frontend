@@ -96,9 +96,19 @@ async function settle<T>(run: Promise<T>): Promise<T> {
 const sign = vi.fn(async (txXdr: string) => txXdr)
 
 beforeEach(() => {
+  const storage = new Map<string, string>()
+  vi.stubGlobal('sessionStorage', {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+    removeItem: (key: string) => storage.delete(key),
+    clear: () => storage.clear(),
+  })
   vi.useFakeTimers()
   rpcMock.simulateTransaction.mockReset().mockResolvedValue(okSimulation())
-  rpcMock.sendTransaction.mockReset().mockResolvedValue({ status: 'PENDING', hash: 'abc123' })
+  rpcMock.sendTransaction.mockReset().mockImplementation(async (tx: Transaction) => ({
+    status: 'PENDING',
+    hash: tx.hash().toString('hex'),
+  }))
   rpcMock.getTransaction.mockReset().mockResolvedValue({ status: 'SUCCESS' })
   rpcMock.loadAccount.mockReset().mockImplementation(async (id: string) => new Account(id, '41'))
   rpcMock.serverOptions.length = 0
@@ -108,14 +118,80 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
 })
 
 describe('signed transactions', () => {
+  it.each(['deposit', 'withdraw', 'claim', 'claim_yield'] as const)(
+    'persists %s before sending and tracks confirmation',
+    async (kind) => {
+      const vault = await loadVault()
+      const store = await import('./transactions')
+      rpcMock.sendTransaction.mockImplementation(async (tx: Transaction) => {
+        const saved = JSON.parse(sessionStorage.getItem('hb-pending-transactions')!)
+        expect(saved[0]).toMatchObject({ hash: tx.hash().toString('hex'), kind, status: 'pending' })
+        return { status: 'PENDING', hash: tx.hash().toString('hex') }
+      })
+      const action =
+        kind === 'deposit'
+          ? vault.submitDeposit(100, USER, sign)
+          : kind === 'withdraw'
+            ? vault.submitWithdraw(100, USER, sign)
+            : kind === 'claim'
+              ? vault.submitClaim(USER, sign)
+              : vault.submitClaimYield(USER, sign)
+      await settle<unknown>(action)
+      expect(store.getTransactions()[0]).toMatchObject({
+        kind,
+        status: 'confirmed',
+        fee: 0.00001,
+        inclusionFee: 0.00001,
+        resourceFee: 0,
+      })
+      expect(JSON.parse(sessionStorage.getItem('hb-pending-transactions')!)).toEqual([])
+    },
+  )
+
+  it('preserves a known hash when submission loses its response', async () => {
+    const vault = await loadVault()
+    const store = await import('./transactions')
+    rpcMock.sendTransaction.mockRejectedValue(new Error('connection lost'))
+    await expect(settle(vault.submitDeposit(100, USER, sign))).rejects.toBeInstanceOf(
+      store.TransactionPendingError,
+    )
+    expect(JSON.parse(sessionStorage.getItem('hb-pending-transactions')!)[0]).toMatchObject({
+      status: 'timeout_pending',
+      hash: simulatedTx().hash().toString('hex'),
+    })
+  })
+
+  it('does not record or report pending when signing fails before submission', async () => {
+    const vault = await loadVault()
+    const store = await import('./transactions')
+    await expect(
+      settle(
+        vault.submitDeposit(100, USER, async () => {
+          throw new Error('Signing timed out')
+        }),
+      ),
+    ).rejects.toThrow('Signing timed out')
+    expect(store.getTransactions()).toEqual([])
+    expect(rpcMock.sendTransaction).not.toHaveBeenCalled()
+  })
+
+  it('returns an XLM estimate and reports simulation failure as unavailable', async () => {
+    const vault = await loadVault()
+    expect(await vault.estimateTransactionFee('deposit', 100, USER)).toBe(0.00001)
+    rpcMock.simulateTransaction.mockResolvedValue({ error: 'simulation unavailable' })
+    expect(await vault.estimateTransactionFee('withdraw', 100, USER)).toBeNull()
+    expect(sign).not.toHaveBeenCalled()
+  })
+
   it('deposit(usdc_amount: i128, min_shares: i128)', async () => {
     const vault = await loadVault()
     const hash = await settle(vault.submitDeposit(125.5, USER, sign))
 
-    expect(hash).toBe('abc123')
+    expect(hash).toBe(simulatedTx().hash().toString('hex'))
     const call = invocation(simulatedTx())
     expect(call).toEqual({
       contract: CONTRACT_ID,
@@ -129,14 +205,14 @@ describe('signed transactions', () => {
     expect(sent.networkPassphrase).toBe(TESTNET)
     expect(sent.source).toBe(USER)
     expect(invocation(sent).method).toBe('deposit')
-    expect(rpcMock.getTransaction).toHaveBeenCalledWith('abc123')
+    expect(rpcMock.getTransaction).toHaveBeenCalledWith(simulatedTx().hash().toString('hex'))
   })
 
   it('withdraw(shares_amount: i128, min_usdc_return: i128)', async () => {
     const vault = await loadVault()
     const result = await settle(vault.submitWithdraw(200, USER, sign))
 
-    expect(result.hash).toBe('abc123')
+    expect(result.hash).toBe(simulatedTx().hash().toString('hex'))
     expect(result.queued).toBe(false)
     expect(invocation(simulatedTx())).toEqual({
       contract: CONTRACT_ID,
@@ -151,14 +227,16 @@ describe('signed transactions', () => {
 
   it('claim() takes no arguments', async () => {
     const vault = await loadVault()
-    await expect(settle(vault.submitClaim(USER, sign))).resolves.toBe('abc123')
+    const hash = await settle(vault.submitClaim(USER, sign))
+    expect(hash).toBe(simulatedTx().hash().toString('hex'))
     expect(invocation(simulatedTx())).toMatchObject({ method: 'claim', argTypes: [], args: [] })
     expect(rpcMock.simulateTransaction).toHaveBeenCalledTimes(1)
   })
 
   it('claim_yield(from: Address)', async () => {
     const vault = await loadVault()
-    await expect(settle(vault.submitClaimYield(USER, sign))).resolves.toBe('abc123')
+    const hash = await settle(vault.submitClaimYield(USER, sign))
+    expect(hash).toBe(simulatedTx().hash().toString('hex'))
     expect(invocation(simulatedTx())).toMatchObject({
       method: 'claim_yield',
       argTypes: ['scvAddress'],
@@ -194,12 +272,12 @@ describe('signed transactions', () => {
 
     const result = await settle(vault.submitWithdraw(500, USER, sign))
     expect(result).toMatchObject({
-      hash: 'abc123',
+      hash: simulatedTx().hash().toString('hex'),
       queued: true,
       position: 3,
       estimatedAmount: 500,
     })
-    expect(String(result)).toBe('abc123')
+    expect(String(result)).toBe(simulatedTx().hash().toString('hex'))
   })
 
   it('does not ask the wallet to sign when simulation fails', async () => {
@@ -246,7 +324,7 @@ describe('signed transactions', () => {
     const vault = await loadVault()
     rpcMock.getTransaction.mockResolvedValue({ status: 'NOT_FOUND' })
     await expect(settle(vault.submitDeposit(100, USER, sign))).rejects.toThrow(
-      'Transaction confirmation timed out',
+      "Still pending — we'll keep checking",
     )
   })
 

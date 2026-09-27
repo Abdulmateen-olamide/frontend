@@ -5,6 +5,8 @@ import { useTranslations } from 'next-intl'
 import { Button, AmountInput, LiquidityMeter, AddressChip, useToast } from '../components'
 import { submitWithdraw } from '../wallet/vault'
 import { useWallet } from '../wallet/WalletProvider'
+import { TransactionPendingError } from '../wallet/transactions'
+import { useTransactionFee } from '../wallet/useTransactionFee'
 import { formatDecimal, parseAmount } from '../lib/format'
 import { addPendingClaim } from '../wallet/pendingClaims'
 
@@ -14,7 +16,11 @@ const TOTAL_LIQUID_BALANCE = '482.00'
 const QUICK_WITHDRAW_AMOUNT_SMALL = 2000
 const QUICK_WITHDRAW_AMOUNT_MEDIUM = 5000
 const QUICK_WITHDRAW_AMOUNT_LARGE = 10000
-const QUICK_WITHDRAW_AMOUNTS = [QUICK_WITHDRAW_AMOUNT_SMALL, QUICK_WITHDRAW_AMOUNT_MEDIUM, QUICK_WITHDRAW_AMOUNT_LARGE]
+const QUICK_WITHDRAW_AMOUNTS = [
+  QUICK_WITHDRAW_AMOUNT_SMALL,
+  QUICK_WITHDRAW_AMOUNT_MEDIUM,
+  QUICK_WITHDRAW_AMOUNT_LARGE,
+]
 const MIN_WITHDRAWAL_AMOUNT = 1
 const DISPLAY_DECIMALS = 2
 const DEFAULT_SLIPPAGE_TOLERANCE = 0.005 // 0.5%
@@ -48,6 +54,14 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
   const mountedRef = useRef(true)
   const abortControllerRef = useRef<AbortController | null>(null)
 
+  const n = parseAmount(amount)
+
+  const estimatedFee = useTransactionFee('withdraw', n, address, slippageTolerance)
+  const feeLabel =
+    estimatedFee === null
+      ? 'Estimate unavailable'
+      : `${estimatedFee.toFixed(7)} XLM (estimated maximum)`
+
   useEffect(() => {
     mountedRef.current = true
     return () => {
@@ -68,7 +82,6 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
     }
   }
   // Consolidate amount parsing with parseAmount helper (#417).
-  const n = parseAmount(amount)
 
   const renderStep = (currentStep: WithdrawStep) => {
     const txExplorerUrl = txHash
@@ -80,6 +93,7 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
         return (
           <div style={panel}>
             <h1 style={hw}>{t('h1')}</h1>
+            <p>Network fee: {feeLabel}</p>
             {txError && (
               <div
                 role="alert"
@@ -127,7 +141,9 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                   color: 'var(--ink)',
                 }}
               >
-                <strong>Warning:</strong> Requested amount exceeds immediately available liquid balance (${liquid}.00). Your withdrawal will be placed in the FIFO queue (WithdrawQueued) and will be claimable once vault liquidity is replenished.
+                <strong>Warning:</strong> Requested amount exceeds immediately available liquid
+                balance (${liquid}.00). Your withdrawal will be placed in the FIFO queue
+                (WithdrawQueued) and will be claimable once vault liquidity is replenished.
               </div>
             )}
             {n > TOTAL_LIQUID && (
@@ -191,19 +207,35 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
               size="lg"
               style={{ width: '100%', marginTop: 20, background: 'var(--primary)' }}
               disabled={n < MIN_WITHDRAWAL_AMOUNT || n > TOTAL_LIQUID}
-              reason={n > TOTAL_LIQUID ? 'Amount exceeds pool limit' : n < MIN_WITHDRAWAL_AMOUNT ? t('reasonMin') : undefined}
+              reason={
+                n > TOTAL_LIQUID
+                  ? 'Amount exceeds pool limit'
+                  : n < MIN_WITHDRAWAL_AMOUNT
+                    ? t('reasonMin')
+                    : undefined
+              }
               onClick={async () => {
                 changeStep('pending')
                 setTxError(null)
                 const controller = new AbortController()
                 abortControllerRef.current = controller
                 try {
-                  const result = await submitWithdraw(n, address ?? '', sign, controller.signal, slippageTolerance)
+                  const result = await submitWithdraw(
+                    n,
+                    address ?? '',
+                    sign,
+                    controller.signal,
+                    slippageTolerance,
+                  )
                   if (mountedRef.current) {
                     const hash = typeof result === 'string' ? result : result.hash
                     const queued = typeof result === 'object' ? Boolean(result.queued) : false
-                    const position = typeof result === 'object' && result.position ? result.position : 1
-                    const est = typeof result === 'object' && result.estimatedAmount ? result.estimatedAmount : n
+                    const position =
+                      typeof result === 'object' && result.position ? result.position : 1
+                    const est =
+                      typeof result === 'object' && result.estimatedAmount
+                        ? result.estimatedAmount
+                        : n
                     setTxHash(hash)
                     setIsQueued(queued)
                     setQueuePosition(position)
@@ -235,6 +267,17 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                 } catch (e) {
                   if (mountedRef.current) {
                     if (e instanceof Error && e.message === 'Aborted') {
+                      return
+                    }
+                    const isTimeout = e instanceof TransactionPendingError
+                    if (isTimeout) {
+                      toast({
+                        tone: 'solar',
+                        title: "Still pending — we'll keep checking",
+                        message:
+                          'Withdrawal submitted but waiting for on-chain confirmation. Background tracking is active.',
+                      })
+                      changeStep('amount')
                       return
                     }
                     setTxError(
@@ -349,7 +392,8 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                     marginBottom: 14,
                   }}
                 >
-                  Queued — position #{queuePosition ?? 1}, est. amount ${formatDecimal(estimatedAmount ?? n, DISPLAY_DECIMALS)} USDC
+                  Queued — position #{queuePosition ?? 1}, est. amount $
+                  {formatDecimal(estimatedAmount ?? n, DISPLAY_DECIMALS)} USDC
                 </div>
                 <p
                   style={{
@@ -360,7 +404,9 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                     margin: 0,
                   }}
                 >
-                  Your withdrawal has been queued in the FIFO queue because immediate vault liquidity is limited. You can track and claim this withdrawal from your Portfolio once liquidity becomes available.
+                  Your withdrawal has been queued in the FIFO queue because immediate vault
+                  liquidity is limited. You can track and claim this withdrawal from your Portfolio
+                  once liquidity becomes available.
                 </p>
               </div>
             ) : (
@@ -393,7 +439,12 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                 />
               </div>
             )}
-            <Button variant="primary" size="lg" style={{ width: '100%', background: 'var(--primary)' }} onClick={onDone}>
+            <Button
+              variant="primary"
+              size="lg"
+              style={{ width: '100%', background: 'var(--primary)' }}
+              onClick={onDone}
+            >
               {t('backToPortfolio')}
             </Button>
           </div>

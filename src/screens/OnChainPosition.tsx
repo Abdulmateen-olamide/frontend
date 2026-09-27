@@ -1,5 +1,7 @@
 'use client'
 
+import { TransactionPendingError } from '../wallet/transactions'
+
 import { useEffect, useState, type CSSProperties } from 'react'
 import { Button, Card, StatBlock, useToast } from '../components'
 import { formatDecimal } from '../lib/format'
@@ -55,8 +57,11 @@ export function OnChainPosition() {
       })
     } catch (e) {
       toast({
-        tone: 'error',
-        title: 'Claim failed',
+        tone: e instanceof TransactionPendingError ? 'solar' : 'error',
+        title:
+          e instanceof TransactionPendingError
+            ? 'Still pending — we’ll keep checking'
+            : 'Claim failed',
         message: e instanceof Error ? e.message : 'Could not claim yield right now.',
       })
     } finally {

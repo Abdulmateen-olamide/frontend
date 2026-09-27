@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, type CSSProperties, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
 import { useTranslations } from 'next-intl'
 import { Button, AmountInput, useToast } from '../components'
 import { Helio } from '../brand/Helio'
 import { submitDeposit } from '../wallet/vault'
 import { useVault } from '../wallet/useVault'
+import { TransactionPendingError } from '../wallet/transactions'
+import { useTransactionFee } from '../wallet/useTransactionFee'
 import { scrollToFirstError } from '../lib/scrollToError'
 import { getFriendlyErrorMessage } from '../lib/errorMessages'
 import { isNetworkMismatchError } from '../wallet/networkGuard'
@@ -20,7 +22,6 @@ const MIN_DEPOSIT_USDC = 1
 const USER_BALANCE_USDC = 240
 const DEFAULT_DEPOSIT_USDC = '100'
 const QUICK_DEPOSIT_AMOUNTS_USDC = [25, 50, 100]
-const DEPOSIT_FEE_USDC = 0.01
 const RATE_STALE_AFTER_SECONDS = 30
 const DEFAULT_SLIPPAGE_TOLERANCE = 0.005 // 0.5%
 
@@ -59,6 +60,14 @@ export function Deposit({ onDone }: DepositProps) {
   const [slippageTolerance, setSlippageTolerance] = useState(DEFAULT_SLIPPAGE_TOLERANCE)
   const priceFetchedAt = fetchedAt ?? new Date()
   const [now, setNow] = useState(() => Date.now())
+
+  const n = parseAmount(amount)
+
+  const estimatedFee = useTransactionFee('deposit', n, address, slippageTolerance)
+  const feeLabel =
+    estimatedFee === null
+      ? 'Estimate unavailable'
+      : `${estimatedFee.toFixed(7)} XLM (estimated maximum)`
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
@@ -107,19 +116,15 @@ export function Deposit({ onDone }: DepositProps) {
     onDone()
   }
 
-  // Consolidate amount parsing with parseAmount helper (#417).
-  const n = parseAmount(amount)
-
-  const handleSubmitDeposit = useCallback(async () => {
+  async function handleSubmitDeposit() {
     changeStep('pending')
     setTxError(null)
     markPending(n, address ?? '')
     const controller = new AbortController()
     abortControllerRef.current = controller
     try {
-      // The tx hash is polled for confirmation inside submitDeposit; nothing
-      // on this surface reads it, so we don't bind it.
       await submitDeposit(n, address ?? '', sign, controller.signal, slippageTolerance)
+
       if (mountedRef.current) {
         clearPending()
         changeStep('success')
@@ -134,8 +139,19 @@ export function Deposit({ onDone }: DepositProps) {
         if (e instanceof Error && e.message === 'Aborted') {
           return
         }
+        const isTimeout = e instanceof TransactionPendingError
+        if (isTimeout) {
+          toast({
+            tone: 'solar',
+            title: "Still pending — we'll keep checking",
+            message:
+              'Transaction submitted but waiting for on-chain confirmation. Background tracking is active.',
+          })
+          changeStep('amount')
+          return
+        }
+
         clearPending()
-        // A wallet/app network mismatch message is already user-facing (#611).
         const errorMessage = isNetworkMismatchError(e)
           ? e.message
           : e instanceof Error
@@ -173,7 +189,7 @@ export function Deposit({ onDone }: DepositProps) {
         abortControllerRef.current = null
       }
     }
-  }, [n, address, sign, markPending, clearPending, changeStep, toast, slippageTolerance])
+  }
 
   const price = livePrice
   const balance = USER_BALANCE_USDC
@@ -230,7 +246,11 @@ export function Deposit({ onDone }: DepositProps) {
                         Using estimated rate
                       </span>
                     )}
-                    {t.rich('preview', { shares: formatDecimal(n / price, 4), price: formatSharePrice(price), num })}
+                    {t.rich('preview', {
+                      shares: formatDecimal(n / price, 4),
+                      price: formatSharePrice(price),
+                      num,
+                    })}
                     <span
                       style={{
                         display: 'block',
@@ -239,8 +259,7 @@ export function Deposit({ onDone }: DepositProps) {
                         color: 'var(--ink-60)',
                       }}
                     >
-                      Fee: &lt; $0.01 · Net proceeds: ≈{' '}
-                      {formatDecimal(roundToCents(n - DEPOSIT_FEE_USDC), 2)} USDC worth{' '}
+                      Network fee: {feeLabel} · Deposit: {formatDecimal(n, 2)} USDC worth{' '}
                       {formatDecimal(n / price, 4)} HBS (real-time)
                     </span>
                     {n >= MIN_DEPOSIT_USDC && (
@@ -337,9 +356,9 @@ export function Deposit({ onDone }: DepositProps) {
                 <span style={{ fontFamily: 'var(--font-data)', fontWeight: 600 }}>
                   {formatDecimal(pendingDeposit.amount, 2)} USDC
                 </span>{' '}
-                (started {Math.floor((Date.now() - pendingDeposit.startedAt) / 1000)}s ago) has not
-                yet confirmed. Submitting again before it settles may result in a duplicate
-                investment. Check your portfolio before proceeding.{' '}
+                (started {Math.floor((now - pendingDeposit.startedAt) / 1000)}s ago) has not yet
+                confirmed. Submitting again before it settles may result in a duplicate investment.
+                Check your portfolio before proceeding.{' '}
                 <button
                   type="button"
                   onClick={clearPending}
@@ -374,7 +393,7 @@ export function Deposit({ onDone }: DepositProps) {
               <Row k={t('rowReceive')} v={`≈ ${formatDecimal(n / price, 4)} HBS`} />
               <Row k={t('rowPrice')} v={formatSharePrice(price)} />
               <Row k="Price fetched" v={priceFetchedAt.toLocaleString()} />
-              <Row k={t('rowFee')} v="< $0.01" />
+              <Row k="Network fee" v={feeLabel} />
             </div>
             <div
               style={{
@@ -494,12 +513,7 @@ export function Deposit({ onDone }: DepositProps) {
               <Button variant="ghost" onClick={() => changeStep('amount')}>
                 {t('back')}
               </Button>
-              <Button
-                variant="primary"
-                size="lg"
-                style={{ flex: 1 }}
-                onClick={handleSubmitDeposit}
-              >
+              <Button variant="primary" size="lg" style={{ flex: 1 }} onClick={handleSubmitDeposit}>
                 {t('confirm')}
               </Button>
             </div>

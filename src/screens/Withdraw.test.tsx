@@ -19,6 +19,7 @@ vi.mock('../wallet/WalletProvider', () => ({
 
 vi.mock('../wallet/vault', () => ({
   submitWithdraw: vi.fn(),
+  estimateTransactionFee: vi.fn().mockResolvedValue(0.00001),
 }))
 
 vi.mock('../components/Toast', () => ({

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { ThemeProvider } from '../theme/ThemeProvider'
 import { WalletProvider, useWallet } from '../wallet/WalletProvider'
+import { TransactionsProvider } from '../wallet/TransactionsProvider'
 import { ToastProvider, SessionTimeoutModal, useToast } from '../components'
 import { WatchlistProvider } from '../watchlist/WatchlistProvider'
 import { YieldAlertProvider } from '../alerts/YieldAlertProvider'
@@ -150,16 +151,18 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>
       <WalletProvider>
-        <ToastProvider>
-          <WatchlistProvider>
-            <YieldAlertProvider>
-              <Analytics />
-              <SessionWatcher />
-              <OfflineBanner />
-              {children}
-            </YieldAlertProvider>
-          </WatchlistProvider>
-        </ToastProvider>
+        <TransactionsProvider>
+          <ToastProvider>
+            <WatchlistProvider>
+              <YieldAlertProvider>
+                <Analytics />
+                <SessionWatcher />
+                <OfflineBanner />
+                {children}
+              </YieldAlertProvider>
+            </WatchlistProvider>
+          </ToastProvider>
+        </TransactionsProvider>
       </WalletProvider>
     </ThemeProvider>
   )
