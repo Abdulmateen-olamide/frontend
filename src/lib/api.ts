@@ -12,6 +12,7 @@ import {
   fetchProjectWithDetails,
 } from '../wallet/registry'
 import { ApiError } from './error'
+export { ApiError } from './error'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
 const DEMO_MODE = !API_URL || process.env.NEXT_PUBLIC_DEMO_MODE === 'true'
@@ -33,12 +34,18 @@ export const API_TIMEOUT_MS = 8000
  * status ("HTTP 503"), a timeout, a network error or a malformed body. Demo
  * fallbacks are selected before calling this helper; production errors bubble up.
  */
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS)
   try {
     const res = await fetch(`${API_URL}${path}`, { ...init, signal: controller.signal })
-    if (!res.ok) throw new ApiError({ status: res.status, message: `HTTP ${res.status}` })
+    if (!res.ok) {
+      throw new ApiError({
+        status: res.status,
+        code: `HTTP_${res.status}`,
+        message: `HTTP ${res.status}`,
+      })
+    }
     return (await res.json()) as T
   } catch (error) {
     if (controller.signal.aborted) throw new Error(`timed out after ${API_TIMEOUT_MS}ms`)
@@ -48,74 +55,80 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
+/** Alias for request helper (#587) */
+export const apiFetch = request
+
 export interface ProjectWithDetail {
-	project: Project
-	detail: ProjectDetail
-	verifiedMetadata?: boolean
+  project: Project
+  detail: ProjectDetail
+  verifiedMetadata?: boolean
 }
 
 export interface Investment {
-	id: number
-	projectId: number
-	amount: number
-	projectUrl: string
-	// Add other fields as needed
+  id: number
+  projectId: number
+  amount: number
+  projectUrl: string
+  // Add other fields as needed
 }
 
 export interface PaginatedProjectsResponse {
-	projects: Project[]
-	total: number
-	page: number
-	pageSize: number
-	hasMore: boolean
+  projects: Project[]
+  total: number
+  page: number
+  pageSize: number
+  hasMore: boolean
 }
 
 /**
  * Fetches a paginated/lazy chunk of bonds to optimize initial load time from 3-5s down to sub-second.
  */
-export async function getProjectsPaginated(page = 1, pageSize = 12): Promise<PaginatedProjectsResponse> {
-	if (isRegistryConfigured()) {
-		const offset = (page - 1) * pageSize
-		const pageResult = await fetchProjectsPage(offset, pageSize)
-		return {
-			projects: pageResult.projects,
-			total: pageResult.total,
-			page,
-			pageSize,
-			hasMore: pageResult.hasMore,
-		}
-	}
+export async function getProjectsPaginated(
+  page = 1,
+  pageSize = 12,
+): Promise<PaginatedProjectsResponse> {
+  if (isRegistryConfigured()) {
+    const offset = (page - 1) * pageSize
+    const pageResult = await fetchProjectsPage(offset, pageSize)
+    return {
+      projects: pageResult.projects,
+      total: pageResult.total,
+      page,
+      pageSize,
+      hasMore: pageResult.hasMore,
+    }
+  }
 
-	if (isDemoMode()) {
-		const all = selectProjects()
-		const start = (page - 1) * pageSize
-		const projects = all.slice(start, start + pageSize)
-		return {
-			projects,
-			total: all.length,
-			page,
-			pageSize,
-			hasMore: start + pageSize < all.length,
-		}
-	}
+  if (isDemoMode()) {
+    const all = selectProjects()
+    const start = (page - 1) * pageSize
+    const projects = all.slice(start, start + pageSize)
+    return {
+      projects,
+      total: all.length,
+      page,
+      pageSize,
+      hasMore: start + pageSize < all.length,
+    }
+  }
 
-	try {
-		const data = await apiFetch<unknown>(`/projects?page=${page}&limit=${pageSize}`)
-		if (Array.isArray(data)) {
-			const start = (page - 1) * pageSize
-			return {
-				projects: data.slice(start, start + pageSize),
-				total: data.length,
-				page,
-				pageSize,
-				hasMore: start + pageSize < data.length,
-			}
-		}
-		return data as PaginatedProjectsResponse
-	} catch (error) {
-		if (error instanceof ApiError) throw error
-		throw new ApiError({ cause: error, message: 'Failed to fetch projects' })
-	}
+  try {
+    const data = await request<unknown>(`/projects?page=${page}&limit=${pageSize}`)
+    if (Array.isArray(data)) {
+      const start = (page - 1) * pageSize
+      return {
+        projects: data.slice(start, start + pageSize),
+        total: data.length,
+        page,
+        pageSize,
+        hasMore: start + pageSize < data.length,
+      }
+    }
+    return data as PaginatedProjectsResponse
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    throw new ApiError({ cause: error, message: 'Failed to fetch projects' })
+  }
 }
 
 export async function getProjects(): Promise<Project[]> {
@@ -125,7 +138,7 @@ export async function getProjects(): Promise<Project[]> {
   }
   if (isDemoMode()) return selectProjects()
   try {
-    return await apiFetch<Project[]>('/projects')
+    return await request<Project[]>(`/projects`)
   } catch (error) {
     if (error instanceof ApiError) throw error
     throw new ApiError({ cause: error, message: 'Failed to fetch projects' })
@@ -133,34 +146,37 @@ export async function getProjects(): Promise<Project[]> {
 }
 
 export async function getProject(id: number): Promise<ProjectWithDetail | null> {
-	if (isRegistryConfigured()) {
-		const res = await fetchProjectWithDetails(id)
-		if (res) {
-			return {
-				project: res.project,
-				detail: res.detail,
-				verifiedMetadata: res.verifiedMetadata,
-			}
-		}
-	}
+  if (isRegistryConfigured()) {
+    const res = await fetchProjectWithDetails(id)
+    if (res) {
+      return {
+        project: res.project,
+        detail: res.detail,
+        verifiedMetadata: res.verifiedMetadata,
+      }
+    }
+  }
 
-	const mockProject = selectProjectById(id)
-	const mockDetail = selectProjectDetail(id)
+  const mockProject = selectProjectById(id)
+  const mockDetail = selectProjectDetail(id)
 
-	if (isDemoMode()) {
-		if (!mockProject || !mockDetail) return null
-		return { project: mockProject, detail: mockDetail, verifiedMetadata: true }
-	}
+  if (isDemoMode()) {
+    if (!mockProject || !mockDetail) return null
+    return { project: mockProject, detail: mockDetail, verifiedMetadata: true }
+  }
 
   try {
-    return await apiFetch<ProjectWithDetail>(`/projects/${id}`)
+    return await request<ProjectWithDetail>(`/projects/${id}`)
   } catch (error) {
     if (error instanceof ApiError) throw error
     throw new ApiError({ cause: error, message: `Failed to fetch project ${id}` })
   }
 }
 
-export async function createInvestment(input: { projectId: number; amount: number }): Promise<Investment> {
+export async function createInvestment(input: {
+  projectId: number
+  amount: number
+}): Promise<Investment> {
   // Reject invalid input up front (#432) — projectId must be a positive
   // integer and amount a positive finite number.
   if (
@@ -172,18 +188,18 @@ export async function createInvestment(input: { projectId: number; amount: numbe
     throw new Error('Invalid investment input')
   }
   const mockInvestment = (): Investment => ({
-      id: Math.floor(Math.random() * 100000) + 1,
-      projectId: input.projectId,
-      amount: input.amount,
-      projectUrl: `/projects/${input.projectId}`,
-    })
+    id: Math.floor(Math.random() * 100000) + 1,
+    projectId: input.projectId,
+    amount: input.amount,
+    projectUrl: `/projects/${input.projectId}`,
+  })
 
   if (isDemoMode()) {
     return mockInvestment()
   }
 
   try {
-    const data = await apiFetch<Investment>('/investments', {
+    const data = await request<Investment>('/investments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
@@ -205,10 +221,10 @@ export async function createInvestment(input: { projectId: number; amount: numbe
  * with a backend challenge, but for now we generate a random challenge locally.
  */
 export async function biometricLogin(): Promise<boolean> {
-	if (typeof window === 'undefined' || !window.PublicKeyCredential) {
-		console.warn('[api] Biometric login not supported on this device/browser')
-		return false
-	}
+  if (typeof window === 'undefined' || !window.PublicKeyCredential) {
+    console.warn('[api] Biometric login not supported on this device/browser')
+    return false
+  }
 
   try {
     // Generate a random challenge (in production, this would come from the server)
@@ -255,11 +271,14 @@ export async function getPriceHistory(projectId: number): Promise<PricePoint[]> 
 
   if (isDemoMode()) return makeMock()
   try {
-    const data = await apiFetch<PricePoint[]>(`/projects/${projectId}/price-history`)
+    const data = await request<PricePoint[]>(`/projects/${projectId}/price-history`)
     // Sort ascending by date to ensure chronological order for charting
     return data.sort((a, b) => a.date.localeCompare(b.date))
   } catch (error) {
     if (error instanceof ApiError) throw error
-    throw new ApiError({ cause: error, message: `Failed to fetch price history for project ${projectId}` })
+    throw new ApiError({
+      cause: error,
+      message: `Failed to fetch price history for project ${projectId}`,
+    })
   }
 }

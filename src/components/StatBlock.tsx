@@ -1,4 +1,5 @@
 import { type CSSProperties } from 'react'
+import PropTypes from 'prop-types'
 
 /**
  * Heliobond StatBlock — a labeled figure with optional signed delta. Money uses
@@ -77,7 +78,9 @@ export function StatBlock({
         )}
       </div>
       <div
-        className={stackOnMobile ? 'hb-stat-block-row hb-stat-block-row--stack' : 'hb-stat-block-row'}
+        className={
+          stackOnMobile ? 'hb-stat-block-row hb-stat-block-row--stack' : 'hb-stat-block-row'
+        }
         style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}
       >
         <span
@@ -101,7 +104,11 @@ export function StatBlock({
         </span>
         {delta && (
           <span
-            className={stackOnMobile ? 'hb-stat-block-delta hb-stat-block-delta--stack' : 'hb-stat-block-delta'}
+            className={
+              stackOnMobile
+                ? 'hb-stat-block-delta hb-stat-block-delta--stack'
+                : 'hb-stat-block-delta'
+            }
             style={{
               fontFamily: 'var(--font-data)',
               fontWeight: 'var(--font-weight-semibold)',
@@ -124,4 +131,17 @@ export function StatBlock({
   ) : (
     <div style={wrapperStyle}>{inner}</div>
   )
+}
+
+StatBlock.propTypes = {
+  label: PropTypes.string.isRequired,
+  value: PropTypes.string.isRequired,
+  decimals: PropTypes.string,
+  delta: PropTypes.string,
+  deltaDirection: PropTypes.oneOf(['up', 'down']),
+  unit: PropTypes.string,
+  size: PropTypes.oneOf(['sm', 'md', 'lg']),
+  href: PropTypes.string,
+  style: PropTypes.object,
+  stackOnMobile: PropTypes.bool,
 }

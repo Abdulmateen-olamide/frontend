@@ -19,7 +19,8 @@ export interface ConnectProps {
 
 export function Connect({ onWallet, onNew, onCancel, onBiometric }: ConnectProps) {
   const t = useTranslations('Connect')
-  const { connectionError, connecting, retry } = useWallet()
+  const { connectionError, connecting, syncing, retry } = useWallet()
+  const isSyncing = connecting || syncing
   const edu = [1, 2, 3] as const
 
   return (
@@ -50,20 +51,86 @@ export function Connect({ onWallet, onNew, onCancel, onBiometric }: ConnectProps
       </div>
 
       {connectionError && (
-        <div role="alert" style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 'var(--radius-input)', background: 'rgba(179,54,27,0.07)', border: '1px solid rgba(179,54,27,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <span style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--type-small)', color: 'var(--ember)' }}>{connectionError}</span>
+        <div
+          role="alert"
+          style={{
+            marginBottom: 16,
+            padding: '12px 16px',
+            borderRadius: 'var(--radius-input)',
+            background: 'rgba(179,54,27,0.07)',
+            border: '1px solid rgba(179,54,27,0.18)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: 'var(--type-small)',
+              color: 'var(--ember)',
+            }}
+          >
+            {connectionError}
+          </span>
           <Button variant="secondary" size="sm" onClick={() => void retry()} loading={connecting}>
             Try again
           </Button>
         </div>
       )}
+
+      {isSyncing && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="wallet-syncing-indicator"
+          style={{
+            marginBottom: 20,
+            padding: '12px 16px',
+            borderRadius: 'var(--radius-input)',
+            background: 'var(--ink-06)',
+            border: '1px solid var(--ink-12)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+          }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              width: 16,
+              height: 16,
+              border: '2px solid var(--ink-20, rgba(0,0,0,0.2))',
+              borderTopColor: 'var(--solar, #e8a838)',
+              borderRadius: '50%',
+              animation: 'hb-spin 0.8s linear infinite',
+              display: 'inline-block',
+            }}
+          />
+          <span
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: 'var(--type-small)',
+              color: 'var(--ink)',
+              fontWeight: 500,
+            }}
+          >
+            Syncing with Stellar — waiting for wallet…
+          </span>
+        </div>
+      )}
+
       <div className="hb-doors-grid" style={{ marginBottom: 28 }}>
         <Door
           title={t('walletTitle')}
           body={t('walletBody')}
-          cta={t('walletCta')}
+          cta={isSyncing ? 'Syncing…' : t('walletCta')}
           variant="secondary"
           onClick={onWallet}
+          loading={isSyncing}
           chips={['Freighter', 'xBull', 'Albedo', 'Lobstr']}
         />
         <Door
@@ -156,9 +223,10 @@ interface DoorProps {
   variant: ButtonVariant
   onClick: () => void
   chips: string[]
+  loading?: boolean
 }
 
-function Door({ title, body, cta, variant, onClick, chips }: DoorProps) {
+function Door({ title, body, cta, variant, onClick, chips, loading }: DoorProps) {
   return (
     <div
       style={{
@@ -214,6 +282,7 @@ function Door({ title, body, cta, variant, onClick, chips }: DoorProps) {
       <Button
         variant={variant}
         size="lg"
+        loading={loading}
         style={{ width: '100%', marginTop: 'auto' }}
         onClick={onClick}
       >
