@@ -127,8 +127,7 @@ def delete(id):
 def login():
     if request.method == 'POST':
         if request.form.get('biometric') == 'true':
-            session['user'] = 'demo_user'
-            return redirect(url_for('index'))
+            abort(403, description='Client-only biometric login is disabled')
         username = request.form.get('username')
         password = request.form.get('password')
         if username == 'admin' and password == 'password':
@@ -137,7 +136,7 @@ def login():
         else:
             return render_template_string(''<p style="color:red">Invalid credentials. Try again.</p><a href="{{ url_for('login') }}">Back to login</a>'')
 
-    login_html = '''<!doctype html><html><head><title>Login</title></head><body><h2>Login</h2><form method="post"><input type="text" name="username" placeholder="Username" required><input type="password" name="password" placeholder="Password" required><button type="submit">Login with password</button></form><hr><button onclick="biometricLogin()">Login with Face ID / Touch ID</button><script>function biometricLogin() {const form = document.createElement('form');form.method = 'post';const input = document.createElement('input');input.type = 'hidden';input.name = 'biometric';input.value = 'true';form.appendChild(input);document.body.appendChild(form);form.submit();}</script></body></html>''
+    login_html = '''<!doctype html><html><head><title>Login</title></head><body><h2>Login</h2><form method="post"><input type="text" name="username" placeholder="Username" required><input type="password" name="password" placeholder="Password" required><button type="submit">Login with password</button></form></body></html>''
     return render_template_string(login_html)
 
 @app.route('/logout')
