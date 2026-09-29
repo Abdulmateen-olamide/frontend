@@ -1,4 +1,5 @@
 import { type CSSProperties, type ReactNode, useState, useEffect } from 'react'
+import PropTypes from 'prop-types'
 import { sanitizeAmount } from '../lib/format'
 
 export { sanitizeAmount }
@@ -286,3 +287,24 @@ const chipStyle: CSSProperties = {
   fontSize: 'var(--type-small)',
   color: 'var(--ink)',
 }
+
+AmountInput.propTypes = {
+  value: PropTypes.string,
+  onChange: PropTypes.func,
+  currency: PropTypes.string,
+  balanceLabel: PropTypes.string,
+  balance: PropTypes.string,
+  chips: PropTypes.arrayOf(PropTypes.number.isRequired),
+  cap: PropTypes.number,
+  capMessage: PropTypes.string,
+  maxChipLabel: PropTypes.string,
+  capActionLabel: PropTypes.string,
+  preview: PropTypes.node,
+  label: PropTypes.string,
+  id: PropTypes.string,
+  style: PropTypes.object,
+}
+
+/** Alias for AmountInput (#309) */
+export const InvestmentForm = AmountInput
+export type InvestmentFormProps = AmountInputProps

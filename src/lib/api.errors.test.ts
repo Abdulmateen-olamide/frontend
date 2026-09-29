@@ -121,6 +121,21 @@ describe('getProjects', () => {
     await expect(api.getProjects()).rejects.toThrow('HTTP 500')
   })
 
+  it('request helper throws typed ApiError with status, code, and message', async () => {
+    const api = await loadApi()
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ error: 'server error' }, 503))
+    try {
+      await api.request('/test-endpoint')
+      expect.fail('should have thrown')
+    } catch (err: unknown) {
+      expect(err).toBeInstanceOf(api.ApiError)
+      const apiErr = err as InstanceType<typeof api.ApiError>
+      expect(apiErr.status).toBe(503)
+      expect(apiErr.code).toBe('HTTP_503')
+      expect(apiErr.message).toBe('HTTP 503')
+    }
+  })
+
   it('returns the API payload on success', async () => {
     const api = await loadApi()
     const remote = [{ ...selectProjects()[0], name: 'Remote project' }]
