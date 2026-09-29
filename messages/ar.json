@@ -408,6 +408,17 @@
     "yieldHistory": "سجل العائد",
     "yieldLabel": "العائد"
   },
+  "PriceHistory": {
+    "title": "تسعير السند",
+    "caption": "ملاحظات موثقة من Oracle، {range}.",
+    "ariaLabel": "سجل أسعار السند",
+    "priceLabel": "السعر",
+    "priceUnit": "% من القيمة الاسمية",
+    "priceAriaLabel": "اتجاه سجل الأسعار",
+    "yieldLabel": "العائد",
+    "yieldAriaLabel": "اتجاه سجل العوائد",
+    "since": "منذ {date}"
+  },
   "PasswordResetEmail": {
     "subject": "إعادة تعيين كلمة مرور Heliobond",
     "greeting": "مرحباً،",

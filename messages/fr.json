@@ -397,6 +397,17 @@
     "yieldHistory": "Historique des rendements",
     "yieldLabel": "Rendement"
   },
+  "PriceHistory": {
+    "title": "Cours de l'obligation",
+    "caption": "Observations vérifiées par l'oracle, {range}.",
+    "ariaLabel": "Historique des cours de l'obligation",
+    "priceLabel": "Prix",
+    "priceUnit": "% du pair",
+    "priceAriaLabel": "Tendance de l'historique des prix",
+    "yieldLabel": "Rendement",
+    "yieldAriaLabel": "Tendance de l'historique des rendements",
+    "since": "depuis {date}"
+  },
   "PasswordResetEmail": {
     "subject": "Réinitialisez votre mot de passe Heliobond",
     "greeting": "Bonjour,",

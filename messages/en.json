@@ -397,6 +397,17 @@
     "yieldHistory": "Yield history",
     "yieldLabel": "Yield"
   },
+  "PriceHistory": {
+    "title": "Bond pricing",
+    "caption": "Oracle-verified observations, {range}.",
+    "ariaLabel": "Bond price history",
+    "priceLabel": "Price",
+    "priceUnit": "% of par",
+    "priceAriaLabel": "Price history trend",
+    "yieldLabel": "Yield",
+    "yieldAriaLabel": "Yield history trend",
+    "since": "since {date}"
+  },
   "PasswordResetEmail": {
     "subject": "Reset your Heliobond password",
     "greeting": "Hello,",

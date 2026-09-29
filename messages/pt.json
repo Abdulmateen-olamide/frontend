@@ -390,6 +390,17 @@
     "yieldHistory": "Histórico de rendimento",
     "yieldLabel": "Rendimento"
   },
+  "PriceHistory": {
+    "title": "Preço do título",
+    "caption": "Observações verificadas pelo oráculo, {range}.",
+    "ariaLabel": "Histórico de preços do título",
+    "priceLabel": "Preço",
+    "priceUnit": "% do valor nominal",
+    "priceAriaLabel": "Tendência do histórico de preços",
+    "yieldLabel": "Rendimento",
+    "yieldAriaLabel": "Tendência do histórico de rendimentos",
+    "since": "desde {date}"
+  },
   "PasswordResetEmail": {
     "subject": "Redefinição de Senha - Heliobond",
     "greeting": "Hello,",
