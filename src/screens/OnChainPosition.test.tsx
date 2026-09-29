@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@/test/render'
+import { act, fireEvent, render, screen, waitFor } from '@/test/render'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OnChainPosition } from './OnChainPosition'
 import * as vault from '../wallet/vault'
 import * as toastModule from '../components/Toast'
+import { notifyTransactionConfirmed } from '../wallet/vaultEvents'
+import { vaultEventStream } from '../lib/websocket'
 
 const mockToast = vi.fn()
 vi.mock('../components/Toast', async (importOriginal) => {
@@ -32,16 +34,33 @@ vi.mock('../wallet/vault', async (importOriginal) => {
   }
 })
 
-describe('OnChainPosition - Claim yield flow (#590)', () => {
+const portfolio = (shares: number) => ({
+  shares,
+  usdcValue: shares * 2,
+  claimableYield: 1,
+  shareOfPoolBps: 100,
+  totalDeposited: shares * 2,
+})
+
+describe('OnChainPosition - Claim yield flow and live updates (#590, #605)', () => {
   beforeEach(() => {
     vi.stubEnv(
       'NEXT_PUBLIC_VAULT_CONTRACT_ID',
       'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM',
     )
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', '')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
     mockToast.mockClear()
     mockWallet.sign.mockClear()
     vi.mocked(vault.fetchPortfolio).mockReset()
     vi.mocked(vault.submitClaimYield).mockReset()
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
   })
 
   it('renders nothing when vault contract id is not configured', () => {
@@ -161,5 +180,37 @@ describe('OnChainPosition - Claim yield flow (#590)', () => {
         }),
       )
     })
+  })
+
+  it('updates personal shares after a confirmed transaction and live vault event', async () => {
+    vi.mocked(vault.fetchPortfolio)
+      .mockResolvedValueOnce(portfolio(1))
+      .mockResolvedValueOnce(portfolio(2))
+      .mockResolvedValueOnce(portfolio(3))
+    render(<OnChainPosition />)
+    await waitFor(() => expect(screen.getByTestId('onchain-shares')).toHaveTextContent('1.00'))
+    act(() => notifyTransactionConfirmed())
+    await waitFor(() => expect(screen.getByTestId('onchain-shares')).toHaveTextContent('2.00'))
+    act(() =>
+      vaultEventStream.emit({
+        type: 'YieldReceived',
+        contractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM',
+      }),
+    )
+    await waitFor(() => expect(screen.getByTestId('onchain-shares')).toHaveTextContent('3.00'))
+  })
+
+  it('defers reads while hidden and refreshes on tab return', async () => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    vi.mocked(vault.fetchPortfolio).mockResolvedValue(portfolio(4))
+    render(<OnChainPosition />)
+    act(() => notifyTransactionConfirmed())
+    expect(vault.fetchPortfolio).not.toHaveBeenCalled()
+    act(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await waitFor(() => expect(screen.getByTestId('onchain-shares')).toHaveTextContent('4.00'))
+    expect(vault.fetchPortfolio).toHaveBeenCalledTimes(1)
   })
 })
