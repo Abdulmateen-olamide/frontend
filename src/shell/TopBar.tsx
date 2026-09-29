@@ -10,6 +10,11 @@ import { useLocaleSwitcher } from '../i18n/LocaleProvider'
 import { LOCALE_LABELS, type Locale } from '../i18n/config'
 import { useWallet, shortAddress } from '../wallet/WalletProvider'
 import { useTheme } from '../theme/ThemeProvider'
+import { HORIZON_URL, NETWORK_PASSPHRASE, networkLabel } from '../config/network'
+import { networkMismatchMessage } from '../wallet/networkGuard'
+
+/** "Testnet", "Standalone", … — shown as a persistent pill on non-mainnet builds (#611). */
+const NETWORK_NAME = networkLabel(NETWORK_PASSPHRASE)
 
 const Mark = dynamic(() => import('../brand/Mark').then((m) => m.Mark), {
   ssr: false,
@@ -33,7 +38,17 @@ export function TopBar() {
   const router = useRouter()
   const t = useTranslations('Nav')
   useLocaleSwitcher()
-  const { connected, address, connecting, isDemo } = useWallet()
+  const {
+    connected,
+    address,
+    connecting,
+    syncing,
+    restoring,
+    isDemo,
+    networkMismatch,
+    walletNetworkPassphrase,
+    checkWalletNetwork,
+  } = useWallet()
   const { theme, toggle } = useTheme()
 
   const [networkOnline, setNetworkOnline] = useState(true)
@@ -55,7 +70,7 @@ export function TopBar() {
       currentController = controller
       const timeoutId = setTimeout(() => controller.abort(), 3000)
       try {
-        const res = await fetch('https://horizon-testnet.stellar.org', {
+        const res = await fetch(HORIZON_URL, {
           signal: controller.signal,
           cache: 'no-store',
         })
@@ -67,7 +82,9 @@ export function TopBar() {
       }
     }
 
-    const handleOnline = () => { void check() }
+    const handleOnline = () => {
+      void check()
+    }
     const handleOffline = () => {
       currentController?.abort()
       if (!cancelled) setNetworkOnline(false)
@@ -76,7 +93,9 @@ export function TopBar() {
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
     void check()
-    const interval = setInterval(() => { void check() }, 15000)
+    const interval = setInterval(() => {
+      void check()
+    }, 15000)
     return () => {
       cancelled = true
       clearInterval(interval)
@@ -124,146 +143,225 @@ export function TopBar() {
 
   return (
     <>
-    <header
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 200,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 28,
-        padding: '0 32px',
-        height: 68,
-        background: 'color-mix(in srgb, var(--canvas) 86%, transparent)',
-        backdropFilter: 'saturate(140%) blur(12px)',
-        WebkitBackdropFilter: 'saturate(140%) blur(12px)',
-        borderBottom: '1px solid var(--ink-12)',
-      }}
-    >
-      <Link
-        href="/"
-        aria-label="Heliobond — home"
-        style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}
-      >
-        {mounted && pathname === '/' ? <Mark /> : null}
-        <span
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontWeight: 700,
-            fontSize: 21,
-            letterSpacing: '-0.01em',
-            color: 'var(--ink)',
-          }}
-        >
-          heliobond
-        </span>
-      </Link>
-
-      <nav className="hb-topbar-nav" style={{ display: 'flex', gap: 4, marginInlineStart: 8 }}>
-        {NAV.map(({ href, key }) => {
-          const active = href.includes('#')
-            ? pathname === '/' && activeHash === href.slice(href.indexOf('#'))
-            : pathname === href
-          return (
-            <Link
-              key={key}
-              href={href}
-              aria-current={active ? 'page' : undefined}
-              style={{
-                textDecoration: 'none',
-                padding: '8px 14px',
-                borderRadius: 'var(--radius-pill)',
-                fontFamily: 'var(--font-body)',
-                fontSize: 14.5,
-                fontWeight: 500,
-                color: active ? 'var(--ink)' : 'var(--ink-60)',
-              }}
-            >
-              {t(key)}
-            </Link>
-          )
-        })}
-      </nav>
-
-      <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <span
-          role="status"
-          aria-label={networkOnline ? t('networkStatus') : 'Offline'}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 7,
-            fontFamily: 'var(--font-data)',
-            fontSize: 12,
-            color: networkOnline ? 'var(--ink-60)' : '#fff',
-            background: networkOnline ? 'transparent' : 'var(--ember)',
-            borderRadius: networkOnline ? 0 : 'var(--radius-pill)',
-            padding: networkOnline ? 0 : '4px 10px',
-          }}
-        >
-          <span
-            aria-hidden="true"
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: networkOnline ? 'var(--growth)' : '#fff',
-              boxShadow: networkOnline ? '0 0 0 3px var(--growth-12)' : 'none',
-            }}
-          />
-          {networkOnline ? t('testnet') : 'Offline'}
-        </span>
-
-        <button
-          type="button"
-          onClick={toggle}
-          aria-label={themeToggleLabel}
-          aria-pressed={mounted ? isDarkTheme : undefined}
-          title={themeToggleLabel}
-          style={iconBtnStyle}
-        >
-          {mounted ? isDarkTheme ? <SunIcon /> : <MoonIcon /> : null}
-        </button>
-
-        <LocaleDropdown />
-
-        {connected && address ? (
-          <WalletMenu address={address} isDemo={isDemo} />
-        ) : (
-          <Button
-            variant="primary"
-            size="md"
-            loading={connecting && networkOnline}
-            onClick={() => router.push('/connect')}
-          >
-            {t('connect')}
-          </Button>
-        )}
-      </div>
-    </header>
-    {!networkOnline && (
-      <div
-        role="alert"
+      <header
         style={{
           position: 'sticky',
-          top: 68,
-          zIndex: 199,
+          top: 0,
+          zIndex: 200,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          gap: 8,
-          padding: '8px 16px',
-          background: 'var(--ember)',
-          color: '#fff',
-          fontFamily: 'var(--font-body)',
-          fontSize: 13,
-          fontWeight: 500,
+          gap: 28,
+          padding: '0 32px',
+          height: 68,
+          background: 'color-mix(in srgb, var(--canvas) 86%, transparent)',
+          backdropFilter: 'saturate(140%) blur(12px)',
+          WebkitBackdropFilter: 'saturate(140%) blur(12px)',
+          borderBottom: '1px solid var(--ink-12)',
         }}
       >
-        Offline — showing cached data
-      </div>
-    )}
+        <Link
+          href="/"
+          aria-label="Heliobond — home"
+          style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}
+        >
+          {mounted && pathname === '/' ? <Mark /> : null}
+          <span
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: 21,
+              letterSpacing: '-0.01em',
+              color: 'var(--ink)',
+            }}
+          >
+            heliobond
+          </span>
+        </Link>
+
+        <nav className="hb-topbar-nav" style={{ display: 'flex', gap: 4, marginInlineStart: 8 }}>
+          {NAV.map(({ href, key }) => {
+            const active = href.includes('#')
+              ? pathname === '/' && activeHash === href.slice(href.indexOf('#'))
+              : pathname === href
+            return (
+              <Link
+                key={key}
+                href={href}
+                aria-current={active ? 'page' : undefined}
+                style={{
+                  textDecoration: 'none',
+                  padding: '8px 14px',
+                  borderRadius: 'var(--radius-pill)',
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 14.5,
+                  fontWeight: 500,
+                  color: active ? 'var(--ink)' : 'var(--ink-60)',
+                }}
+              >
+                {t(key)}
+              </Link>
+            )
+          })}
+        </nav>
+
+        <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <NetworkPill passphrase={NETWORK_PASSPHRASE} />
+
+          <span
+            role="status"
+            aria-label={networkOnline ? `Network: ${NETWORK_NAME} online` : 'Offline'}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 7,
+              fontFamily: 'var(--font-data)',
+              fontSize: 12,
+              color: networkOnline ? 'var(--ink-60)' : '#fff',
+              background: networkOnline ? 'transparent' : 'var(--ember)',
+              borderRadius: networkOnline ? 0 : 'var(--radius-pill)',
+              padding: networkOnline ? 0 : '4px 10px',
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: networkOnline ? 'var(--growth)' : '#fff',
+                boxShadow: networkOnline ? '0 0 0 3px var(--growth-12)' : 'none',
+              }}
+            />
+            {networkOnline ? null : 'Offline'}
+          </span>
+
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label={themeToggleLabel}
+            aria-pressed={mounted ? isDarkTheme : undefined}
+            title={themeToggleLabel}
+            style={iconBtnStyle}
+          >
+            {mounted ? isDarkTheme ? <SunIcon /> : <MoonIcon /> : null}
+          </button>
+
+          <LocaleDropdown />
+
+          {connected && address ? (
+            <WalletMenu
+              address={address}
+              isDemo={isDemo}
+              syncing={syncing || restoring || connecting}
+            />
+          ) : (
+            <Button
+              variant="primary"
+              size="md"
+              loading={(connecting || syncing || restoring) && networkOnline}
+              onClick={() => router.push('/connect')}
+            >
+              {t('connect')}
+            </Button>
+          )}
+        </div>
+      </header>
+      {!networkOnline && (
+        <div
+          role="alert"
+          style={{
+            position: 'sticky',
+            top: 68,
+            zIndex: 199,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            padding: '8px 16px',
+            background: 'var(--ember)',
+            color: '#fff',
+            fontFamily: 'var(--font-body)',
+            fontSize: 13,
+            fontWeight: 500,
+          }}
+        >
+          Offline — showing cached data
+        </div>
+      )}
+      {networkMismatch && walletNetworkPassphrase && (
+        <div
+          role="alert"
+          data-testid="network-mismatch"
+          style={{
+            position: 'sticky',
+            top: 68,
+            zIndex: 199,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            gap: 12,
+            padding: '8px 16px',
+            background: 'var(--ember)',
+            color: '#fff',
+            fontFamily: 'var(--font-body)',
+            fontSize: 13,
+            fontWeight: 500,
+          }}
+        >
+          <span>
+            {networkMismatchMessage(walletNetworkPassphrase, NETWORK_PASSPHRASE)} Signing is blocked
+            until they match.
+          </span>
+          <button
+            type="button"
+            onClick={() => void checkWalletNetwork()}
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: 13,
+              fontWeight: 600,
+              padding: '4px 12px',
+              borderRadius: 'var(--radius-pill)',
+              border: '1px solid #fff',
+              background: 'transparent',
+              color: '#fff',
+              cursor: 'pointer',
+            }}
+          >
+            Check again
+          </button>
+        </div>
+      )}
     </>
+  )
+}
+
+/**
+ * Persistent network pill ("TESTNET", "STANDALONE", …) on every non-mainnet
+ * build, so nobody mistakes test balances for real ones (#611).
+ */
+export function NetworkPill({ passphrase }: { passphrase: string }) {
+  const name = networkLabel(passphrase)
+  if (name === 'Mainnet') return null
+  return (
+    <span
+      data-testid="network-pill"
+      title={`This build runs on the Stellar ${name} — balances have no real value.`}
+      style={{
+        fontFamily: 'var(--font-data)',
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: '0.08em',
+        color: 'var(--ink)',
+        background: 'var(--solar-12)',
+        border: '1px solid var(--solar)',
+        borderRadius: 'var(--radius-pill)',
+        padding: '3px 10px',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {name.toUpperCase()}
+    </span>
   )
 }
 
@@ -441,7 +539,15 @@ function SunIcon() {
 }
 
 /** The connected wallet pill + its account menu (incl. Disconnect / sign out). */
-function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
+function WalletMenu({
+  address,
+  isDemo,
+  syncing = false,
+}: {
+  address: string
+  isDemo: boolean
+  syncing?: boolean
+}) {
   const t = useTranslations('Nav')
   const { toast } = useToast()
   const router = useRouter()
@@ -614,7 +720,27 @@ function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
         <span style={{ fontFamily: 'var(--font-data)', fontSize: 13, color: 'var(--ink)' }}>
           {shortAddress(address)}
         </span>
-        <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--solar)' }} />
+        {syncing ? (
+          <span
+            role="status"
+            aria-label="Syncing with Stellar"
+            title="Syncing with Stellar…"
+            style={{
+              width: 16,
+              height: 16,
+              border: '2px solid var(--ink-20, rgba(0,0,0,0.2))',
+              borderTopColor: 'var(--solar)',
+              borderRadius: '50%',
+              animation: 'hb-spin 0.8s linear infinite',
+              display: 'inline-block',
+              marginInline: 6,
+            }}
+          />
+        ) : (
+          <span
+            style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--solar)' }}
+          />
+        )}
       </button>
 
       {open && (
@@ -644,7 +770,7 @@ function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
             <span
               style={{ fontFamily: 'var(--font-body)', fontSize: 11.5, color: 'var(--ink-40)' }}
             >
-              {isDemo ? t('demoSession') : t('testnet')}
+              {isDemo ? t('demoSession') : NETWORK_NAME}
             </span>
           </div>
           <div style={{ height: 1, background: 'var(--ink-12)', margin: '4px 0' }} />

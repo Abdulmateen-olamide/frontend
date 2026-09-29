@@ -10,7 +10,7 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(mockSearch),
 }))
 
-vi.mock('@/lib/api', () => ({ getProjectsPaginated: vi.fn() }))
+vi.mock('@/lib/api', () => ({ getProjectsPaginated: vi.fn(), shouldShowDemoBadge: () => false }))
 
 vi.mock('../components', async () => {
   const actual = await vi.importActual<typeof import('../components')>('../components')

@@ -4,11 +4,16 @@ import { useEffect, useState } from 'react'
 import { ThemeProvider } from '../theme/ThemeProvider'
 import { WalletProvider, useWallet } from '../wallet/WalletProvider'
 import { ToastProvider, SessionTimeoutModal, useToast } from '../components'
+import { SessionProvider } from '../session/SessionProvider'
+import { RecurringInvestmentSync } from '../session/RecurringInvestmentSync'
 import { WatchlistProvider } from '../watchlist/WatchlistProvider'
 import { YieldAlertProvider } from '../alerts/YieldAlertProvider'
 import { useSessionTimeout } from '../hooks/useSessionTimeout'
 import { usePathname } from 'next/navigation'
+import { useReportWebVitals } from 'next/web-vitals'
 import { track } from '../lib/analytics'
+import { installGlobalErrorHandlers, reportWebVitals } from '../lib/errorReporting'
+import { HORIZON_URL } from '../config/network'
 
 function Analytics() {
   const pathname = usePathname()
@@ -17,6 +22,13 @@ function Analytics() {
     void track('page_view', { path: pathname })
   }, [pathname])
 
+  return null
+}
+
+/** Collects web-vitals (LCP, INP, CLS…) and uncaught errors for telemetry (#609). */
+function Telemetry() {
+  useReportWebVitals(reportWebVitals)
+  useEffect(() => installGlobalErrorHandlers(), [])
   return null
 }
 
@@ -74,9 +86,7 @@ function OfflineBanner() {
       const timeoutId = setTimeout(() => controller.abort(), 3000)
 
       try {
-        const horizonUrl =
-          process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL || 'https://horizon.stellar.org'
-        const response = await fetch(`${horizonUrl}/`, { signal: controller.signal })
+        const response = await fetch(`${HORIZON_URL}/`, { signal: controller.signal })
         if (!response.ok) throw new Error('Stellar node unreachable')
         if (active && currentController === controller) setStellarReachable(true)
       } catch {
@@ -152,16 +162,20 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>
       <WalletProvider>
-        <ToastProvider>
-          <WatchlistProvider>
-            <YieldAlertProvider>
-              <Analytics />
-              <SessionWatcher />
-              <OfflineBanner />
-              {children}
-            </YieldAlertProvider>
-          </WatchlistProvider>
-        </ToastProvider>
+        <SessionProvider>
+          <ToastProvider>
+            <WatchlistProvider>
+              <YieldAlertProvider>
+                <RecurringInvestmentSync />
+                <Analytics />
+                <Telemetry />
+                <SessionWatcher />
+                <OfflineBanner />
+                {children}
+              </YieldAlertProvider>
+            </WatchlistProvider>
+          </ToastProvider>
+        </SessionProvider>
       </WalletProvider>
     </ThemeProvider>
   )
