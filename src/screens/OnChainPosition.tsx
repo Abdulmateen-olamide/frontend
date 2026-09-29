@@ -3,6 +3,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { Button, Card, StatBlock, useToast } from '../components'
 import { formatDecimal } from '../lib/format'
+import { useVaultRefresh } from '../wallet/useVaultRefresh'
 import { useWallet } from '../wallet/WalletProvider'
 import { fetchPortfolio, submitClaimYield, type OnChainPortfolio } from '../wallet/vault'
 
@@ -17,11 +18,12 @@ export function OnChainPosition() {
   const [portfolio, setPortfolio] = useState<OnChainPortfolio | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [claiming, setClaiming] = useState(false)
-  const [reloads, setReloads] = useState(0)
   const enabled = Boolean(process.env.NEXT_PUBLIC_VAULT_CONTRACT_ID) && !isDemo && !!address
 
+  const { tick: reloads } = useVaultRefresh(enabled)
+
   useEffect(() => {
-    if (!enabled || !address) return
+    if (!enabled || !address || document.hidden) return
     let cancelled = false
     fetchPortfolio(address).then(
       (next) => {
@@ -51,7 +53,6 @@ export function OnChainPosition() {
         title: 'Yield claimed',
         message: 'Your yield was paid out in USDC.',
       })
-      setReloads((n) => n + 1)
     } catch (e) {
       toast({
         tone: 'error',
