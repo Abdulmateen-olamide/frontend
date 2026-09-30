@@ -148,7 +148,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('signed transactions', () => {
+describe('signed transactions', { timeout: 30_000 }, () => {
   it.each(['deposit', 'withdraw', 'claim', 'claim_yield'] as const)(
     'persists %s before sending and tracks confirmation',
     async (kind) => {
@@ -487,7 +487,7 @@ describe('demo mode (no contract configured)', () => {
   })
 })
 
-describe('view calls', () => {
+describe('view calls', { timeout: 30_000 }, () => {
   it('share price reads convert_to_assets(1 share)', async () => {
     const vault = await loadVault()
     rpcMock.simulateTransaction.mockResolvedValue(

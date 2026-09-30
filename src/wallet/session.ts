@@ -24,7 +24,13 @@ export interface StoredSession {
   network: AppNetwork | null
 }
 
-const EMPTY: StoredSession = { address: '', walletId: null, network: null }
+/**
+ * Snapshot used on the server and for the first client render, before storage
+ * has been read. Identity is meaningful: it tells callers the session is not
+ * known yet, which is what keeps `RequireWallet` from redirecting a connected
+ * user on every page load.
+ */
+export const UNREAD_SESSION: StoredSession = { address: '', walletId: null, network: null }
 
 function storage(): Storage | null {
   try {
@@ -39,27 +45,30 @@ function parseNetwork(raw: string | null): AppNetwork | null {
   return raw === 'PUBLIC' || raw === 'TESTNET' ? raw : null
 }
 
+/**
+ * Reads storage. Always returns a fresh object, so a caller can tell "read, and
+ * there is no session" apart from "not read yet".
+ */
 export function readSession(): StoredSession {
   const store = storage()
-  if (!store) return EMPTY
+  if (!store) return { ...UNREAD_SESSION }
   try {
-    const address = store.getItem(ADDRESS_KEY) ?? ''
     return {
-      address,
+      address: store.getItem(ADDRESS_KEY) ?? '',
       walletId: store.getItem(WALLET_KEY),
       network: parseNetwork(store.getItem(NETWORK_KEY)),
     }
   } catch {
-    return EMPTY
+    return { ...UNREAD_SESSION }
   }
 }
 
 /** No session on the server: the first client render must match the server HTML. */
 export function getServerSession(): StoredSession {
-  return EMPTY
+  return UNREAD_SESSION
 }
 
-let snapshot: StoredSession = EMPTY
+let snapshot: StoredSession = UNREAD_SESSION
 const listeners = new Set<() => void>()
 
 function refresh(): void {

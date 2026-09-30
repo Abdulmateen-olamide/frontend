@@ -20,6 +20,7 @@ import {
   saveNetwork,
   saveSession,
   subscribeSession,
+  UNREAD_SESSION,
   type AppNetwork,
 } from './session'
 import type { Networks } from '@creit.tech/stellar-wallets-kit/types'
@@ -98,8 +99,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const address = stored.address || null
   const isDemo = stored.walletId === DEMO_WALLET_ID
-  // Restore is done as soon as storage has been read, which the store does synchronously.
-  const restoring = false
+  // Storage is only readable in the browser, so the server render and the first
+  // client render both see the unread snapshot. `restoring` stays true until
+  // the store has actually read it, which is what stops `RequireWallet` from
+  // bouncing a connected user to /connect on every page load (#595).
+  const restoring = stored === UNREAD_SESSION
   const network: AppNetwork = stored.network ?? getInitialNetwork()
 
   const persist = useCallback((addr: string, walletId: string) => {

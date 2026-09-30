@@ -9,6 +9,11 @@ export default defineConfig({
     setupFiles: ['./vitest.setup.ts'],
     globals: true,
     include: ['**/*.test.{ts,tsx}'],
+    // Vitest's 5s default is tight on a loaded CI runner: the Soroban vault
+    // and AddressChip suites intermittently timed out there while passing
+    // reliably in isolation (#596). Generous enough for a slow machine,
+    // short enough to still catch a real hang.
+    testTimeout: 10_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'json-summary', 'html'],
