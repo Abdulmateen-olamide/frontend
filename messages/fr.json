@@ -395,7 +395,9 @@
     "priceHistory": "Historique des prix",
     "priceLabel": "Prix",
     "yieldHistory": "Historique des rendements",
-    "yieldLabel": "Rendement"
+    "yieldLabel": "Rendement",
+    "yieldHelpLabel": "À propos du rendement de l’obligation",
+    "yieldHelp": "Il s’agit du rendement indicatif actuel de l’obligation. Touchez pour en savoir plus ; ce rendement n’est pas garanti."
   },
   "PriceHistory": {
     "title": "Cours de l'obligation",

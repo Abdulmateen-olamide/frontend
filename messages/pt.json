@@ -388,7 +388,9 @@
     "priceHistory": "Histórico de preços",
     "priceLabel": "Preço",
     "yieldHistory": "Histórico de rendimento",
-    "yieldLabel": "Rendimento"
+    "yieldLabel": "Rendimento",
+    "yieldHelpLabel": "Sobre o rendimento do título",
+    "yieldHelp": "Este é o rendimento indicativo atual do título. Toque para saber mais; não é um retorno garantido."
   },
   "PriceHistory": {
     "title": "Preço do título",

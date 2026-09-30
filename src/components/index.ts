@@ -38,6 +38,8 @@ export type {
 } from './FormField'
 export { Sparkline } from './Sparkline'
 export type { SparklineProps } from './Sparkline'
+export { InfoTooltip } from './InfoTooltip'
+export type { InfoTooltipProps } from './InfoTooltip'
 export { SessionTimeoutModal } from './SessionTimeoutModal'
 export type { SessionTimeoutModalProps } from './SessionTimeoutModal'
 export { TelemetryConsent, TelemetryPreference } from './TelemetryConsent'
