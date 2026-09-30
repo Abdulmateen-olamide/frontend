@@ -38,15 +38,28 @@ export function getPersistedYieldRange(): [number, number] {
     // was parsed as a relative URL and threw, so the query-string override was
     // silently swallowed by the catch below and never applied.
     const url = new URL(window.location.href)
-    const fromUrl = url.searchParams.get('yieldRange')
+    const fromUrl =
+      url.searchParams.get('yieldRange') ||
+      url.searchParams.get('yield') ||
+      url.searchParams.get('range')
     if (fromUrl) {
       const [min, max] = fromUrl.split('-').map(Number)
+      if (Number.isFinite(min) && Number.isFinite(max)) return [min, max]
+    }
+    const minParam = url.searchParams.get('minYield')
+    const maxParam = url.searchParams.get('maxYield')
+    if (minParam !== null && maxParam !== null) {
+      const min = Number(minParam)
+      const max = Number(maxParam)
       if (Number.isFinite(min) && Number.isFinite(max)) return [min, max]
     }
     const stored = localStorage.getItem(YIELD_FILTER_KEY)
     if (stored) {
       const parsed = JSON.parse(stored)
-      if (Array.isArray(parsed) && parsed.length === 2) return parsed as [number, number]
+      if (Array.isArray(parsed) && parsed.length === 2) {
+        const [min, max] = parsed
+        if (Number.isFinite(min) && Number.isFinite(max)) return [min, max]
+      }
     }
   } catch {}
   return YIELD_DEFAULT
@@ -58,7 +71,7 @@ export function persistYieldRange(range: [number, number]): void {
     localStorage.setItem(YIELD_FILTER_KEY, JSON.stringify(range))
     const url = new URL(window.location.href)
     url.searchParams.set('yieldRange', `${range[0]}-${range[1]}`)
-    window.history.replaceState(null, '', url.toString())
+    window.history.replaceState(window.history.state, '', url.toString())
   } catch {}
 }
 
@@ -79,12 +92,16 @@ export function subscribeYieldRange(listener: () => void): () => void {
   yieldRangeListeners.add(listener)
   if (typeof window !== 'undefined') {
     window.addEventListener('storage', onYieldRangeStorage)
+    window.addEventListener('popstate', republishYieldRange)
+    window.addEventListener('pageshow', republishYieldRange)
     document.addEventListener('visibilitychange', onYieldRangeVisible)
   }
   return () => {
     yieldRangeListeners.delete(listener)
     if (typeof window !== 'undefined') {
       window.removeEventListener('storage', onYieldRangeStorage)
+      window.removeEventListener('popstate', republishYieldRange)
+      window.removeEventListener('pageshow', republishYieldRange)
       document.removeEventListener('visibilitychange', onYieldRangeVisible)
     }
   }
@@ -96,7 +113,7 @@ function republishYieldRange(): void {
 }
 
 function onYieldRangeStorage(event: StorageEvent): void {
-  if (event.key !== null && event.key !== YIELD_FILTER_KEY) return
+  if (event.key && event.key !== YIELD_FILTER_KEY) return
   republishYieldRange()
 }
 
@@ -143,7 +160,7 @@ export function persistSortOrder(direction: SortDirection): void {
     localStorage.setItem(SORT_ORDER_KEY, direction)
     const url = new URL(window.location.href)
     url.searchParams.set('sortOrder', direction)
-    window.history.replaceState(null, '', url.toString())
+    window.history.replaceState(window.history.state, '', url.toString())
   } catch {}
 }
 
@@ -163,12 +180,16 @@ export function subscribeSortOrder(listener: () => void): () => void {
   sortOrderListeners.add(listener)
   if (typeof window !== 'undefined') {
     window.addEventListener('storage', onSortOrderStorage)
+    window.addEventListener('popstate', republishSortOrder)
+    window.addEventListener('pageshow', republishSortOrder)
     document.addEventListener('visibilitychange', onSortOrderVisible)
   }
   return () => {
     sortOrderListeners.delete(listener)
     if (typeof window !== 'undefined') {
       window.removeEventListener('storage', onSortOrderStorage)
+      window.removeEventListener('popstate', republishSortOrder)
+      window.removeEventListener('pageshow', republishSortOrder)
       document.removeEventListener('visibilitychange', onSortOrderVisible)
     }
   }

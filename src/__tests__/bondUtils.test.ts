@@ -85,4 +85,27 @@ describe('bondUtils', () => {
     localStorage.clear()
     expect(getPersistedYieldRange()).toEqual([3, 12])
   })
+
+  it('restores yield range from alternative query parameter formats', () => {
+    localStorage.clear()
+
+    window.history.replaceState(null, '', 'http://localhost:3000/portfolio?yield=4-9')
+    expect(getPersistedYieldRange()).toEqual([4, 9])
+
+    window.history.replaceState(null, '', 'http://localhost:3000/portfolio?range=2-7')
+    expect(getPersistedYieldRange()).toEqual([2, 7])
+
+    window.history.replaceState(null, '', 'http://localhost:3000/portfolio?minYield=5&maxYield=11')
+    expect(getPersistedYieldRange()).toEqual([5, 11])
+  })
+
+  it('retains yield filter in localStorage when navigating to clean URL', () => {
+    localStorage.clear()
+    window.history.replaceState(null, '', 'http://localhost:3000/portfolio')
+
+    persistYieldRange([4, 10])
+    // User navigates away to clean URL (e.g. /project/1)
+    window.history.replaceState(null, '', 'http://localhost:3000/project/1')
+    expect(getPersistedYieldRange()).toEqual([4, 10])
+  })
 })
