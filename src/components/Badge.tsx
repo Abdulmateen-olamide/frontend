@@ -1,4 +1,5 @@
 import { type CSSProperties, type HTMLAttributes, type ReactNode } from 'react'
+import PropTypes from 'prop-types'
 
 /**
  * Heliobond Badge — a small status marker. Tones derive meaning from an
@@ -69,4 +70,11 @@ export function Badge({ tone = 'neutral', icon = null, children, style, ...rest 
       {children}
     </span>
   )
+}
+
+Badge.propTypes = {
+  tone: PropTypes.oneOf(['neutral', 'solar', 'growth', 'ember', 'testnet']),
+  icon: PropTypes.node,
+  children: PropTypes.node.isRequired,
+  style: PropTypes.object,
 }

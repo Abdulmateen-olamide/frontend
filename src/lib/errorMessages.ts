@@ -1,3 +1,5 @@
+import { contractErrorMessageEn } from './contractErrors'
+
 /*
  * Maps technical error codes and enum values to user-friendly messages.
  * Never surface raw codes like 'insufficient_balance' to users.
@@ -25,6 +27,7 @@ const ERROR_CODE_MAP: Record<string, string> = {
   server_error: 'We are having trouble right now - please try again shortly.',
   internal_error: 'Something went wrong on our side - please try again.',
   unexpected_error: 'Something went wrong - please try again.',
+  slippage_limit_exceeded: 'Price moved unfavorably — please refresh the quote and try again.',
   '500': 'We are having trouble right now - please try again shortly.',
   '502': 'We are having trouble right now - please try again shortly.',
   '503': 'We are having trouble right now - please try again shortly.',
@@ -88,17 +91,17 @@ function extractCodeFromError(error: unknown): string | null {
   if (!error || typeof error !== 'object') return null
   const obj = error as Record<string, unknown>
   // If it looks like an Axios/Axios-like error with a response
-  if (obj.response && typeof obj.response === 'object') {
-    const resp = obj.response as Record<string, unknown>
-    const status = resp.status
+  if (obj.response) {
+    const response = obj.response as Record<string, unknown>
+    const status = response.status
     if (typeof status === 'number' && status >= 500) {
       return String(status)
     }
-    const data = resp.data
+    const data = response.data
     if (data && typeof data === 'object') {
-      const dataObj = data as Record<string, unknown>
-      if (typeof dataObj.code === 'string') return dataObj.code
-      if (typeof dataObj.message === 'string') return dataObj.message
+      const { code, message } = data as Record<string, unknown>
+      if (typeof code === 'string') return code
+      if (typeof message === 'string') return message
     } else if (typeof data === 'string' && data.trim()) {
       return data
     }
@@ -116,6 +119,9 @@ function looksLikeNetworkError(message: string): boolean {
 
 export function getFriendlyErrorMessage(codeOrMessage: string): string {
   if (!codeOrMessage) return FALLBACK_MESSAGE
+  // Soroban `Error(Contract, #N)` failures get a specific message (#610).
+  const contractMessage = contractErrorMessageEn(codeOrMessage)
+  if (contractMessage) return contractMessage
   const normalized = normalizeCode(codeOrMessage)
   if (ERROR_CODE_MAP[normalized]) return ERROR_CODE_MAP[normalized]
 
@@ -133,6 +139,8 @@ export function getFriendlyErrorMessage(codeOrMessage: string): string {
 }
 
 export function parseAndFriendlyError(error: unknown): string {
+  const contractMessage = contractErrorMessageEn(error)
+  if (contractMessage) return contractMessage
   const code = extractCodeFromError(error)
   if (code) return getFriendlyErrorMessage(code)
   if (error instanceof Error) return getFriendlyErrorMessage(error.message)

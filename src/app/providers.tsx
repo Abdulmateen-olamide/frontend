@@ -1,14 +1,21 @@
 'use client'
 import type { ReactNode } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { ThemeProvider } from '../theme/ThemeProvider'
 import { WalletProvider, useWallet } from '../wallet/WalletProvider'
+import { TransactionsProvider } from '../wallet/TransactionsProvider'
 import { ToastProvider, SessionTimeoutModal, useToast } from '../components'
+import { SessionProvider } from '../session/SessionProvider'
+import { RecurringInvestmentSync } from '../session/RecurringInvestmentSync'
 import { WatchlistProvider } from '../watchlist/WatchlistProvider'
 import { YieldAlertProvider } from '../alerts/YieldAlertProvider'
 import { useSessionTimeout } from '../hooks/useSessionTimeout'
 import { usePathname } from 'next/navigation'
+import { useReportWebVitals } from 'next/web-vitals'
 import { track } from '../lib/analytics'
+import { installGlobalErrorHandlers, reportWebVitals } from '../lib/errorReporting'
+import { TelemetryConsent } from '../components/TelemetryConsent'
+import { HorizonHealthProvider, useHorizonHealth } from '../hooks/useHorizonHealth'
 
 function Analytics() {
   const pathname = usePathname()
@@ -17,6 +24,13 @@ function Analytics() {
     void track('page_view', { path: pathname })
   }, [pathname])
 
+  return null
+}
+
+/** Collects web-vitals (LCP, INP, CLS…) and uncaught errors for telemetry (#609). */
+function Telemetry() {
+  useReportWebVitals(reportWebVitals)
+  useEffect(() => installGlobalErrorHandlers(), [])
   return null
 }
 
@@ -46,81 +60,18 @@ function SessionWatcher() {
   )
 }
 
-function OfflineBanner() {
-  const { connected } = useWallet()
-  const [isOnline, setIsOnline] = useState(
-    typeof navigator !== 'undefined' ? navigator.onLine : true,
-  )
-  const [wasConnected, setWasConnected] = useState(() => {
-    try {
-      return localStorage.getItem('stellar-wallet-connected') === 'true'
-    } catch {
-      return false
-    }
-  })
-  const [stellarReachable, setStellarReachable] = useState(true)
+/**
+ * Warns that the app is serving cached data: no network, no Stellar node, or a
+ * wallet session that dropped on its own. Exported for tests (#595).
+ */
+export function OfflineBanner() {
+  const { connected, lastDisconnectReason } = useWallet()
+  const { isOnline } = useHorizonHealth()
 
-  useEffect(() => {
-    let active = true
-    let currentController: AbortController | null = null
-
-    const checkStellar = async () => {
-      // Abort any in-flight request to prevent stale responses/hangs.
-      if (currentController) {
-        currentController.abort()
-      }
-      const controller = new AbortController()
-      currentController = controller
-      const timeoutId = setTimeout(() => controller.abort(), 3000)
-
-      try {
-        const horizonUrl =
-          process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL || 'https://horizon.stellar.org'
-        const response = await fetch(`${horizonUrl}/`, { signal: controller.signal })
-        if (!response.ok) throw new Error('Stellar node unreachable')
-        if (active && currentController === controller) setStellarReachable(true)
-      } catch {
-        if (active && currentController === controller) setStellarReachable(false)
-      } finally {
-        clearTimeout(timeoutId)
-        if (currentController === controller) currentController = null
-      }
-    }
-
-    const handleOnline = () => {
-      setIsOnline(true)
-      checkStellar()
-    }
-    const handleOffline = () => setIsOnline(false)
-
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    checkStellar()
-    const interval = setInterval(checkStellar, 30000)
-
-    return () => {
-      active = false
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-      clearInterval(interval)
-      // Abort any outstanding request on unmount.
-      currentController?.abort()
-    }
-  }, [])
-
-  useEffect(() => {
-    if (connected) {
-      try {
-        localStorage.setItem('stellar-wallet-connected', 'true')
-      } catch {
-        // ignore storage errors
-      }
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setWasConnected(true)
-    }
-  }, [connected])
-
-  const showOffline = !isOnline || (wasConnected && !connected) || !stellarReachable
+  // A session the user ended on purpose must not raise a false alarm (#595).
+  // An unexpected drop — or a plain network outage — still does.
+  const lostSession = !connected && lastDisconnectReason === 'lost'
+  const showOffline = !isOnline || lostSession
   if (!showOffline) return null
 
   return (
@@ -151,18 +102,27 @@ function OfflineBanner() {
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>
-      <WalletProvider>
-        <ToastProvider>
-          <WatchlistProvider>
-            <YieldAlertProvider>
-              <Analytics />
-              <SessionWatcher />
-              <OfflineBanner />
-              {children}
-            </YieldAlertProvider>
-          </WatchlistProvider>
-        </ToastProvider>
-      </WalletProvider>
+      <HorizonHealthProvider>
+        <WalletProvider>
+          <SessionProvider>
+            <TransactionsProvider>
+              <ToastProvider>
+                <WatchlistProvider>
+                  <YieldAlertProvider>
+                    <RecurringInvestmentSync />
+                    <Analytics />
+                    <Telemetry />
+                    <TelemetryConsent />
+                    <SessionWatcher />
+                    <OfflineBanner />
+                    {children}
+                  </YieldAlertProvider>
+                </WatchlistProvider>
+              </ToastProvider>
+            </TransactionsProvider>
+          </SessionProvider>
+        </WalletProvider>
+      </HorizonHealthProvider>
     </ThemeProvider>
   )
 }

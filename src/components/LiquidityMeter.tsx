@@ -1,4 +1,5 @@
 import { type CSSProperties } from 'react'
+import PropTypes from 'prop-types'
 import { formatMoney } from '@/lib/format'
 
 /**
@@ -99,4 +100,12 @@ export function LiquidityMeter({
       )}
     </div>
   )
+}
+
+LiquidityMeter.propTypes = {
+  liquid: PropTypes.number,
+  total: PropTypes.number,
+  currency: PropTypes.string,
+  showExplanation: PropTypes.bool,
+  style: PropTypes.object,
 }
