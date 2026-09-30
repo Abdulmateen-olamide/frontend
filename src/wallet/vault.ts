@@ -399,6 +399,7 @@ export interface OnChainPortfolio {
  */
 export async function fetchPortfolio(account: string): Promise<OnChainPortfolio> {
   if (!CONTRACT_ID) throw new Error('NEXT_PUBLIC_VAULT_CONTRACT_ID not set')
+  if (offline) throw new Error('Stellar node is offline')
   const { Address, scValToNative } = await import('@stellar/stellar-sdk')
   const retval = await sorobanSimulate(account, 'get_portfolio', [new Address(account).toScVal()])
   const raw = scValToNative(retval) as Record<string, bigint | number>
@@ -818,7 +819,25 @@ export async function submitWithdraw(
 
   const { nativeToScVal, xdr, scValToNative } = await import('@stellar/stellar-sdk')
 
-  const shares = Math.round((amount / cachedSharePrice) * SCALE)
+  const [priceStr, portfolio] = await Promise.all([
+    fetchSharePrice(address),
+    fetchPortfolio(address),
+  ])
+
+  const livePrice = Number(priceStr)
+  if (!livePrice || isNaN(livePrice)) {
+    throw new Error('No live share price available')
+  }
+
+  let shares = Math.floor((amount / livePrice) * SCALE)
+  const maxShares = Math.floor(portfolio.shares * SCALE)
+
+  if (shares >= maxShares) {
+    shares = maxShares
+    // Recalculate amount based on the exact shares being burned so minUsdcReturn calculation matches
+    amount = (shares / SCALE) * livePrice
+  }
+
   const minUsdcReturn = Math.floor(amount * (1 - slippageTolerance) * SCALE)
   const { hash, confirmation: conf } = await invokeSigned(
     address,
