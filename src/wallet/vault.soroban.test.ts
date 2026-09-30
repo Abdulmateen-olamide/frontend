@@ -568,8 +568,10 @@ describe('view calls', () => {
   describe('fetchVaultLimits', () => {
     it('fetches and scales vault limits from the contract', async () => {
       const vault = await loadVault()
-      rpcMock.simulateTransaction.mockImplementation((tx: any) => {
-        const op = tx.operations[0]
+      rpcMock.simulateTransaction.mockImplementation((tx: Transaction) => {
+        // Only invoke-contract operations reach `fetchVaultLimits`.
+        const op = tx.operations.find((candidate) => 'func' in candidate)
+        if (!op || !('func' in op)) throw new Error('expected an invoke-contract operation')
         const call = op.func.invokeContract()
         const method = call.functionName().toString()
         if (method === 'is_paused') return Promise.resolve(okSimulation(xdr.ScVal.scvBool(true)))
