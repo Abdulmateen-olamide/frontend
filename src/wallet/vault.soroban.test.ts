@@ -35,6 +35,7 @@ vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
   }
   class HorizonServer {
     loadAccount = rpcMock.loadAccount
+    fetchBaseFee = vi.fn().mockResolvedValue(100)
   }
   return {
     ...actual,
