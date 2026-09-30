@@ -1,57 +1,31 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useSyncExternalStore } from 'react'
 import {
-  getPersistedYieldRange,
-  persistYieldRange,
-  getPersistedSortOrder,
-  persistSortOrder,
-  type SortDirection,
+  getServerSortOrder,
+  getServerYieldRange,
+  getSortOrder,
+  getYieldRange,
+  setSortOrder as persistSort,
+  setYieldRange as persistRange,
+  subscribeSortOrder,
+  subscribeYieldRange,
 } from '@/lib/bondUtils'
 
+/**
+ * The selected bond yield range. Read through an external store so the first
+ * client render already reflects the persisted value instead of being corrected
+ * by an effect afterwards (#598). Changes in another tab are picked up too.
+ */
 export function useBondFilters() {
-  const [yieldRange, setYieldRangeState] = useState<[number, number]>([0, 15])
-  const [sortOrder, setSortOrderState] = useState<SortDirection>('asc')
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setYieldRangeState(getPersistedYieldRange())
-    setSortOrderState(getPersistedSortOrder())
-  }, [])
-
-  const setYieldRange = useCallback((range: [number, number]) => {
-    setYieldRangeState(range)
-    persistYieldRange(range)
-  }, [])
-
-  const setSortOrder = useCallback((direction: SortDirection) => {
-    setSortOrderState(direction)
-    persistSortOrder(direction)
-  }, [])
-
-  // Persist across tab switches via storage event
-  useEffect(() => {
-    const handler = () => {
-      setYieldRangeState(getPersistedYieldRange())
-      setSortOrderState(getPersistedSortOrder())
-    }
-    window.addEventListener('storage', handler)
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') handler()
-    }
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => {
-      window.removeEventListener('storage', handler)
-      document.removeEventListener('visibilitychange', onVisibility)
-    }
-  }, [])
-
+  const yieldRange = useSyncExternalStore(subscribeYieldRange, getYieldRange, getServerYieldRange)
+  const sortOrder = useSyncExternalStore(subscribeSortOrder, getSortOrder, getServerSortOrder)
   return {
     yieldRange,
-    setYieldRange,
+    setYieldRange: persistRange,
     sortOrder,
-    setSortOrder,
+    setSortOrder: persistSort,
     sortDirection: sortOrder,
-    setSortDirection: setSortOrder,
+    setSortDirection: persistSort,
   }
 }
 

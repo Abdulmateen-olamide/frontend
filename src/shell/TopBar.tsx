@@ -1,15 +1,22 @@
 'use client'
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Button, useToast } from '../components'
+import { Button, TransactionsDrawer, useToast } from '../components'
 import { useLocaleSwitcher } from '../i18n/LocaleProvider'
-import { LOCALE_LABELS, type Locale } from '../i18n/config'
+import { LOCALE_LABELS, LOCALE_NAMES, type Locale } from '../i18n/config'
 import { useWallet, shortAddress } from '../wallet/WalletProvider'
+import { useTransactions } from '../wallet/TransactionsProvider'
 import { useTheme } from '../theme/ThemeProvider'
+import { NETWORK_PASSPHRASE, networkLabel, getExplorerAccountUrl } from '../config/network'
+import { useHorizonHealth } from '../hooks/useHorizonHealth'
+import { networkMismatchMessage } from '../wallet/networkGuard'
+
+/** "Testnet", "Standalone", … — shown as a persistent pill on non-mainnet builds (#611). */
+const NETWORK_NAME = networkLabel(NETWORK_PASSPHRASE)
 
 const Mark = dynamic(() => import('../brand/Mark').then((m) => m.Mark), {
   ssr: false,
@@ -33,62 +40,27 @@ export function TopBar() {
   const router = useRouter()
   const t = useTranslations('Nav')
   useLocaleSwitcher()
-  const { connected, address, connecting, isDemo } = useWallet()
+  const {
+    connected,
+    address,
+    connecting,
+    syncing,
+    restoring,
+    isDemo,
+    networkMismatch,
+    walletNetworkPassphrase,
+    checkWalletNetwork,
+  } = useWallet()
   const { theme, toggle } = useTheme()
+  const { pendingCount, transactions } = useTransactions()
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const closeDrawer = useCallback(() => setDrawerOpen(false), [])
 
-  const [networkOnline, setNetworkOnline] = useState(true)
+  const { isOnline: networkOnline } = useHorizonHealth()
 
   useEffect(() => {
     router.prefetch('/connect')
   }, [router])
-
-  useEffect(() => {
-    let cancelled = false
-    let currentController: AbortController | undefined
-
-    const check = async () => {
-      if (!navigator.onLine) {
-        if (!cancelled) setNetworkOnline(false)
-        return
-      }
-      const controller = new AbortController()
-      currentController = controller
-      const timeoutId = setTimeout(() => controller.abort(), 3000)
-      try {
-        const res = await fetch('https://horizon-testnet.stellar.org', {
-          signal: controller.signal,
-          cache: 'no-store',
-        })
-        if (!cancelled) setNetworkOnline(res.ok || res.status < 500)
-      } catch {
-        if (!cancelled) setNetworkOnline(false)
-      } finally {
-        clearTimeout(timeoutId)
-      }
-    }
-
-    const handleOnline = () => {
-      void check()
-    }
-    const handleOffline = () => {
-      currentController?.abort()
-      if (!cancelled) setNetworkOnline(false)
-    }
-
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    void check()
-    const interval = setInterval(() => {
-      void check()
-    }, 15000)
-    return () => {
-      cancelled = true
-      clearInterval(interval)
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-      currentController?.abort()
-    }
-  }, [])
 
   // Theme state starts 'light' on server/first render (to avoid a hydration
   // mismatch), so the toggle icon can't be trusted until after mount — a
@@ -190,9 +162,11 @@ export function TopBar() {
         </nav>
 
         <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <NetworkPill passphrase={NETWORK_PASSPHRASE} />
+
           <span
             role="status"
-            aria-label={networkOnline ? t('networkStatus') : 'Offline'}
+            aria-label={networkOnline ? `Network: ${NETWORK_NAME} online` : 'Offline'}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -215,7 +189,7 @@ export function TopBar() {
                 boxShadow: networkOnline ? '0 0 0 3px var(--growth-12)' : 'none',
               }}
             />
-            {networkOnline ? t('testnet') : 'Offline'}
+            {networkOnline ? null : 'Offline'}
           </span>
 
           <button
@@ -231,19 +205,65 @@ export function TopBar() {
 
           <LocaleDropdown />
 
+          {(connected || transactions.length > 0) && (
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Transaction activity history"
+              title="Transaction activity history"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
+                borderRadius: 'var(--radius-pill)',
+                border:
+                  pendingCount > 0
+                    ? '1px solid rgba(59, 130, 246, 0.4)'
+                    : '1px solid var(--ink-12)',
+                background: pendingCount > 0 ? 'rgba(59, 130, 246, 0.1)' : 'var(--surface)',
+                color: pendingCount > 0 ? '#3b82f6' : 'var(--ink)',
+                fontFamily: 'var(--font-data)',
+                fontSize: 'var(--type-caption)',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all var(--dur-press) var(--ease-out)',
+              }}
+            >
+              {pendingCount > 0 && (
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: '#3b82f6',
+                    animation: 'hb-pulse 1.4s ease-in-out infinite',
+                  }}
+                />
+              )}
+              {pendingCount > 0 ? `${pendingCount} Pending` : 'Activity'}
+            </button>
+          )}
+
           {connected && address ? (
-            <WalletMenu address={address} isDemo={isDemo} />
+            <WalletMenu
+              address={address}
+              isDemo={isDemo}
+              syncing={syncing || restoring || connecting}
+            />
           ) : (
             <Button
               variant="primary"
               size="md"
-              loading={connecting && networkOnline}
+              loading={(connecting || syncing || restoring) && networkOnline}
               onClick={() => router.push('/connect')}
             >
               {t('connect')}
             </Button>
           )}
         </div>
+
+        <TransactionsDrawer open={drawerOpen} onClose={closeDrawer} />
       </header>
       {!networkOnline && (
         <div
@@ -267,7 +287,80 @@ export function TopBar() {
           Offline — showing cached data
         </div>
       )}
+      {networkMismatch && walletNetworkPassphrase && (
+        <div
+          role="alert"
+          data-testid="network-mismatch"
+          style={{
+            position: 'sticky',
+            top: 68,
+            zIndex: 199,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            gap: 12,
+            padding: '8px 16px',
+            background: 'var(--ember)',
+            color: '#fff',
+            fontFamily: 'var(--font-body)',
+            fontSize: 13,
+            fontWeight: 500,
+          }}
+        >
+          <span>
+            {networkMismatchMessage(walletNetworkPassphrase, NETWORK_PASSPHRASE)} Signing is blocked
+            until they match.
+          </span>
+          <button
+            type="button"
+            onClick={() => void checkWalletNetwork()}
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: 13,
+              fontWeight: 600,
+              padding: '4px 12px',
+              borderRadius: 'var(--radius-pill)',
+              border: '1px solid #fff',
+              background: 'transparent',
+              color: '#fff',
+              cursor: 'pointer',
+            }}
+          >
+            Check again
+          </button>
+        </div>
+      )}
     </>
+  )
+}
+
+/**
+ * Persistent network pill ("TESTNET", "STANDALONE", …) on every non-mainnet
+ * build, so nobody mistakes test balances for real ones (#611).
+ */
+export function NetworkPill({ passphrase }: { passphrase: string }) {
+  const name = networkLabel(passphrase)
+  if (name === 'Mainnet') return null
+  return (
+    <span
+      data-testid="network-pill"
+      title={`This build runs on the Stellar ${name} — balances have no real value.`}
+      style={{
+        fontFamily: 'var(--font-data)',
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: '0.08em',
+        color: 'var(--ink)',
+        background: 'var(--solar-12)',
+        border: '1px solid var(--solar)',
+        borderRadius: 'var(--radius-pill)',
+        padding: '3px 10px',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {name.toUpperCase()}
+    </span>
   )
 }
 
@@ -290,6 +383,7 @@ function LocaleDropdown() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   useEffect(() => {
     if (!open) return
@@ -303,18 +397,42 @@ function LocaleDropdown() {
   useEffect(() => {
     if (open) {
       setTimeout(() => {
-        const items = ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]')
-        items?.[0]?.focus()
+        const locales = Object.keys(LOCALE_LABELS) as Locale[]
+        const currentIndex = locales.indexOf(locale)
+        itemRefs.current[currentIndex]?.focus()
       }, 0)
     }
-  }, [open])
+  }, [open, locale])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
+    const items = itemRefs.current.filter((el): el is HTMLButtonElement => el !== null)
+    if (!items.length) return
+    const focused = document.activeElement
+    const idx = items.indexOf(focused as HTMLButtonElement)
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      items[(idx + 1) % items.length].focus()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      items[(idx - 1 + items.length) % items.length].focus()
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      items[0].focus()
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      items[items.length - 1].focus()
+    } else if (e.key === 'Escape') {
       setOpen(false)
       triggerRef.current?.focus()
+    } else if (e.key === 'Tab') {
+      setOpen(false)
     }
   }
+
+  // Reset item refs array before each render
+  // eslint-disable-next-line react-hooks/refs
+  itemRefs.current = []
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -360,7 +478,11 @@ function LocaleDropdown() {
           {(Object.keys(LOCALE_LABELS) as Locale[]).map((code) => (
             <button
               key={code}
-              role="menuitem"
+              ref={(el) => {
+                itemRefs.current.push(el)
+              }}
+              role="menuitemradio"
+              aria-checked={code === locale}
               tabIndex={-1}
               type="button"
               onClick={() => {
@@ -382,7 +504,7 @@ function LocaleDropdown() {
                 background: 'transparent',
               }}
             >
-              {LOCALE_LABELS[code]}
+              <span lang={code}>{LOCALE_NAMES[code]}</span>
             </button>
           ))}
         </div>
@@ -445,7 +567,15 @@ function SunIcon() {
 }
 
 /** The connected wallet pill + its account menu (incl. Disconnect / sign out). */
-function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
+function WalletMenu({
+  address,
+  isDemo,
+  syncing = false,
+}: {
+  address: string
+  isDemo: boolean
+  syncing?: boolean
+}) {
   const t = useTranslations('Nav')
   const { toast } = useToast()
   const router = useRouter()
@@ -458,6 +588,14 @@ function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
 
   const [open, setOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
+
+  // Closing the menu resets the confirm step. Adjusting during render is React's
+  // sanctioned way to reset state for a changed prop (#598).
+  const [wasMenuOpen, setWasMenuOpen] = useState(false)
+  if (wasMenuOpen !== open) {
+    setWasMenuOpen(open)
+    if (!open) setConfirming(false)
+  }
   const [copied, setCopied] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -489,20 +627,18 @@ function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
   }, [open])
 
   useEffect(() => {
-    if (!open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setConfirming(false)
-      if (cancelTimerRef.current) {
-        clearTimeout(cancelTimerRef.current)
-        cancelTimerRef.current = null
+    if (open) {
+      const onDown = (e: MouseEvent) => {
+        if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
       }
-      return
+      document.addEventListener('mousedown', onDown)
+      return () => document.removeEventListener('mousedown', onDown)
     }
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    // Closing cancels a pending confirm-reset so it cannot fire on a later open.
+    if (cancelTimerRef.current) {
+      clearTimeout(cancelTimerRef.current)
+      cancelTimerRef.current = null
     }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
   }, [open])
 
   const copy = async () => {
@@ -618,7 +754,27 @@ function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
         <span style={{ fontFamily: 'var(--font-data)', fontSize: 13, color: 'var(--ink)' }}>
           {shortAddress(address)}
         </span>
-        <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--solar)' }} />
+        {syncing ? (
+          <span
+            role="status"
+            aria-label="Syncing with Stellar"
+            title="Syncing with Stellar…"
+            style={{
+              width: 16,
+              height: 16,
+              border: '2px solid var(--ink-20, rgba(0,0,0,0.2))',
+              borderTopColor: 'var(--solar)',
+              borderRadius: '50%',
+              animation: 'hb-spin 0.8s linear infinite',
+              display: 'inline-block',
+              marginInline: 6,
+            }}
+          />
+        ) : (
+          <span
+            style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--solar)' }}
+          />
+        )}
       </button>
 
       {open && (
@@ -648,7 +804,7 @@ function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
             <span
               style={{ fontFamily: 'var(--font-body)', fontSize: 11.5, color: 'var(--ink-40)' }}
             >
-              {isDemo ? t('demoSession') : t('testnet')}
+              {isDemo ? t('demoSession') : NETWORK_NAME}
             </span>
           </div>
           <div style={{ height: 1, background: 'var(--ink-12)', margin: '4px 0' }} />
@@ -687,7 +843,7 @@ function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
               ref={(el) => {
                 itemRefs.current.push(el)
               }}
-              href={`https://stellar.expert/explorer/testnet/account/${address}`}
+              href={getExplorerAccountUrl(address)}
             >
               {t('viewOnExplorer')}
             </MenuLink>

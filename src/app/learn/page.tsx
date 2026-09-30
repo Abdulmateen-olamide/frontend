@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
+import { devRoutesEnabled } from '../../lib/devRoutes'
 
 export default function LearnPage() {
   const t = useTranslations('Learn')
@@ -61,19 +62,21 @@ export default function LearnPage() {
         >
           {t('howBody')}
         </p>
-        <Link
-          href="/learn/password-reset-email"
-          style={{
-            display: 'inline-flex',
-            marginTop: 16,
-            color: 'var(--accent)',
-            fontFamily: 'var(--font-body)',
-            fontWeight: 600,
-            textDecoration: 'none',
-          }}
-        >
-          Preview the password reset email
-        </Link>
+        {devRoutesEnabled() && (
+          <Link
+            href="/learn/password-reset-email"
+            style={{
+              display: 'inline-flex',
+              marginTop: 16,
+              color: 'var(--accent)',
+              fontFamily: 'var(--font-body)',
+              fontWeight: 600,
+              textDecoration: 'none',
+            }}
+          >
+            Preview the password reset email
+          </Link>
+        )}
       </div>
     </main>
   )

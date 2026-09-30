@@ -1,4 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from 'react'
+import PropTypes from 'prop-types'
 import { ScoreGauge } from './ScoreGauge'
 import { PinIcon } from './icons'
 import { formatMoney } from '../lib/format'
@@ -217,3 +218,24 @@ export function ProjectCard({
     </article>
   )
 }
+
+ProjectCard.propTypes = {
+  name: PropTypes.string.isRequired,
+  location: PropTypes.string.isRequired,
+  image: PropTypes.string,
+  credit: PropTypes.number,
+  green: PropTypes.number,
+  funded: PropTypes.string,
+  fundedLabel: PropTypes.string,
+  verifiedAgo: PropTypes.string,
+  verifiedLabel: PropTypes.string,
+  onOpen: PropTypes.func,
+  style: PropTypes.object,
+  fundingGoal: PropTypes.number,
+  fundedAmount: PropTypes.number,
+  action: PropTypes.node,
+}
+
+/** Alias for ProjectCard (#309) */
+export const BondCard = ProjectCard
+export type BondCardProps = ProjectCardProps

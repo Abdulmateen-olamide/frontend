@@ -1,9 +1,14 @@
-'use client'
+import type { Metadata } from 'next'
+import { getProjectsPaginated } from '../../lib/api'
+import { routeMetadata } from '../../lib/routeMetadata.server'
+import { ExploreClient } from './ExploreClient'
 
-import { useRouter } from 'next/navigation'
-import { Explore } from '../../screens/Explore'
+/** Indexable public content route (#657). */
+export async function generateMetadata(): Promise<Metadata> {
+  return routeMetadata('/explore')
+}
 
-export default function ExplorePage() {
-  const router = useRouter()
-  return <Explore onOpen={(p) => router.push(`/project/${p.id}`)} />
+export default async function ExplorePage() {
+  const data = await getProjectsPaginated(1, 50).catch(() => ({ projects: [], total: 0 }))
+  return <ExploreClient initialProjects={data.projects} initialTotal={data.total} />
 }

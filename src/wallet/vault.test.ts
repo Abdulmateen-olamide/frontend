@@ -190,16 +190,16 @@ describe('Vault math functions', () => {
       const { submitDeposit } = await import('./vault')
       const longMemo = 'a'.repeat(100)
 
-      await expect(submitDeposit(100, testAddress, mockSign, undefined, longMemo)).rejects.toThrow(
-        'Memo text is too long',
-      )
+      await expect(
+        submitDeposit(100, testAddress, mockSign, undefined, undefined, longMemo),
+      ).rejects.toThrow('Memo text is too long')
     })
 
     it('accepts submitDeposit with valid memo <= 28 bytes', async () => {
       const { submitDeposit } = await import('./vault')
       const validMemo = 'deposit-valid'
 
-      const hash = await submitDeposit(100, testAddress, mockSign, undefined, validMemo)
+      const hash = await submitDeposit(100, testAddress, mockSign, undefined, undefined, validMemo)
       expect(hash).toBeDefined()
     })
 
@@ -207,9 +207,9 @@ describe('Vault math functions', () => {
       const { submitWithdraw } = await import('./vault')
       const longMemo = 'a'.repeat(100)
 
-      await expect(submitWithdraw(50, testAddress, mockSign, undefined, longMemo)).rejects.toThrow(
-        'Memo text is too long',
-      )
+      await expect(
+        submitWithdraw(50, testAddress, mockSign, undefined, undefined, longMemo),
+      ).rejects.toThrow('Memo text is too long')
     })
 
     it('rejects submitPayment when memo exceeds 28 bytes', async () => {

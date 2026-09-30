@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, type CSSProperties } from 'react'
 import { CheckIcon, CopyIcon, ExternalIcon } from './icons'
 import { useTranslations } from 'next-intl'
 import { useToast } from './Toast'
+import { getExplorerUrl } from '../config/network'
 
 /**
  * Heliobond AddressChip — a Stellar address or tx hash, truncated in the
@@ -38,6 +39,7 @@ export function AddressChip({
   const [copied, setCopied] = useState(false)
   const [hover, setHover] = useState(false)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const finalExplorerUrl = explorerUrl ?? getExplorerUrl(value)
 
   useEffect(() => {
     return () => {
@@ -139,9 +141,9 @@ export function AddressChip({
       >
         {copied ? <CheckIcon style={{ color: 'var(--growth)' }} /> : <CopyIcon />}
       </button>
-      {explorerUrl && (
+      {finalExplorerUrl && (
         <a
-          href={explorerUrl}
+          href={finalExplorerUrl}
           target="_blank"
           rel="noreferrer"
           aria-label={t('viewOnExplorer', { label })}

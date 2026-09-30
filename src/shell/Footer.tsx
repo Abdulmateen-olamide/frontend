@@ -3,10 +3,12 @@
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { Mark } from '../brand/Mark'
+import { TelemetryPreference } from '../components/TelemetryConsent'
 
 /**
  * Footer — quiet, honest. Includes "Talk to a human" (trust is shown, not
- * claimed) and a discreet link to the internal admin/oracle console.
+ * claimed), the telemetry privacy control (#658) and a discreet link to the
+ * internal admin/oracle console.
  */
 export function Footer() {
   const t = useTranslations('Footer')
@@ -35,6 +37,7 @@ export function Footer() {
               {t('admin')}
             </Link>
           </nav>
+          <TelemetryPreference />
         </div>
       </div>
     </footer>
