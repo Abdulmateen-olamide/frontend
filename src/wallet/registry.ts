@@ -13,13 +13,22 @@ import {
   selectProjectDetail,
   selectScoreHistory,
 } from '../state/selectors'
-import { STELLAR_NETWORK, SOROBAN_RPC_URL as RPC_URL } from '../config/network'
+import { SOROBAN_RPC_URL as RPC_URL, NETWORK_PASSPHRASE, allowHttpFor } from '../config/network'
+import { reportError } from '../lib/errorReporting'
 
 function getRegistryContractId(): string | undefined {
   return process.env.NEXT_PUBLIC_REGISTRY_CONTRACT_ID
 }
 
 const CACHE_TTL_MS = 30000
+
+/**
+ * Well-formed Ed25519 public key used as the source account for read-only
+ * registry simulations. Simulations are never submitted, so the account only
+ * has to be a valid G-address — it never needs to exist on-chain. Mirrors
+ * `DEMO_ADDRESS` in WalletProvider.tsx (#625).
+ */
+export const SIMULATION_SOURCE_ADDRESS = 'GCOQ4JRRUC7SBUXLKYXFCZPJWTKDFTULI6DOGB75DZNAVGIST3BNC6UX'
 
 interface CacheEntry<T> {
   data: T
@@ -55,55 +64,65 @@ export function isRegistryConfigured(): boolean {
 export async function defaultSimulateRegistryCall(
   method: string,
   args: unknown[] = [],
-  sourceAddress = 'GBQHWXVZ2K4M6N8P3R5T7W9YA2C4E6G8J3L5Q7S9U2X4Z6B8D1F3H59XQ',
+  sourceAddress = SIMULATION_SOURCE_ADDRESS,
 ): Promise<unknown> {
   const contractId = getRegistryContractId()
   if (!contractId) throw new Error('NEXT_PUBLIC_REGISTRY_CONTRACT_ID not set')
 
-  const { rpc, Contract, TransactionBuilder, Networks, Account, nativeToScVal, scValToNative } =
+  const { rpc, Contract, TransactionBuilder, Account, nativeToScVal, scValToNative } =
     await import('@stellar/stellar-sdk')
 
-  const server = new rpc.Server(RPC_URL, { allowHttp: false })
+  const server = new rpc.Server(RPC_URL, { allowHttp: allowHttpFor(RPC_URL) })
   const contract = new Contract(contractId)
   const source = new Account(sourceAddress, '0')
-  const networkPassphrase = STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
+  // Honour NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE (local quickstart) via config.
+  const networkPassphrase = NETWORK_PASSPHRASE
 
-  const buildArgs = (useU32: boolean) =>
-    args.map((a) => {
-      if (a && typeof a === 'object' && typeof (a as { switch?: unknown }).switch === 'function') {
-        return a
-      }
-      if (typeof a === 'number' && Number.isInteger(a) && a >= 0 && a <= 4294967295) {
-        return useU32
-          ? nativeToScVal(a, { type: 'u32' })
-          : nativeToScVal(BigInt(a), { type: 'u64' })
-      }
-      return nativeToScVal(a)
-    })
-
-  let lastError: unknown = null
-  for (const useU32 of [true, false]) {
-    try {
-      const scArgs = buildArgs(useU32)
-      const tx = new TransactionBuilder(source, { fee: '100', networkPassphrase })
-        .addOperation(contract.call(method, ...(scArgs as Parameters<typeof contract.call>[1][])))
-        .setTimeout(0)
-        .build()
-
-      const simResult = await server.simulateTransaction(tx)
-      if ('error' in simResult) {
-        lastError = simResult.error
-        continue
-      }
-      if (simResult.result?.retval) {
-        return scValToNative(simResult.result.retval)
-      }
-    } catch (e) {
-      lastError = e
+  // Registry IDs, offsets and limits are all u32 in the contract ABI (#625).
+  const scArgs = args.map((a) => {
+    if (a && typeof a === 'object' && typeof (a as { switch?: unknown }).switch === 'function') {
+      return a
     }
-  }
+    if (typeof a === 'number' && Number.isInteger(a) && a >= 0 && a <= 4294967295) {
+      return nativeToScVal(a, { type: 'u32' })
+    }
+    return nativeToScVal(a)
+  })
 
-  throw new Error(`Simulate failed for ${method}: ${lastError}`)
+  const tx = new TransactionBuilder(source, { fee: '100', networkPassphrase })
+    .addOperation(contract.call(method, ...(scArgs as Parameters<typeof contract.call>[1][])))
+    .setTimeout(0)
+    .build()
+
+  const simResult = await server.simulateTransaction(tx)
+  if ('error' in simResult) {
+    throw new Error(`Simulate failed for ${method}: ${simResult.error}`)
+  }
+  if (!simResult.result?.retval) {
+    throw new Error(`Simulate failed for ${method}: empty simulation result`)
+  }
+  return scValToNative(simResult.result.retval)
+}
+
+/**
+ * True for caller/programming mistakes (invalid source address, undecodable
+ * args) that must surface instead of being hidden behind demo fixtures (#625).
+ */
+function isProgrammingError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error)
+  return (
+    msg.includes('accountId is invalid') ||
+    msg.includes('Invalid address') ||
+    msg.includes('invalid address') ||
+    msg.includes('Malformed') ||
+    msg.includes('malformed') ||
+    msg.includes('not a valid')
+  )
+}
+
+/** Report a failed on-chain registry read before any fixture fallback (#625). */
+function reportRegistryReadError(method: string, error: unknown): void {
+  reportError(error, { kind: 'transaction', context: { target: 'registry', method } })
 }
 
 export type RegistrySimulator = (
@@ -241,7 +260,9 @@ export async function fetchTotalProjects(sourceAddress?: string): Promise<number
     const total = Number(retval)
     setInCache(cacheKey, total)
     return total
-  } catch {
+  } catch (error) {
+    reportRegistryReadError('total_projects', error)
+    if (isProgrammingError(error)) throw error
     return selectProjects().length
   }
 }
@@ -289,7 +310,9 @@ export async function fetchProjectsPage(
     }
     setInCache(cacheKey, result)
     return result
-  } catch {
+  } catch (error) {
+    reportRegistryReadError('get_projects_page', error)
+    if (isProgrammingError(error)) throw error
     const all = selectProjects()
     const slice = all.slice(offset, offset + limit)
     return {
@@ -441,7 +464,9 @@ export async function fetchProjectWithDetails(
 
     setInCache(cacheKey, result)
     return result
-  } catch {
+  } catch (error) {
+    reportRegistryReadError('get_project', error)
+    if (isProgrammingError(error)) throw error
     if (!fallbackProject || !fallbackDetail) return null
     return {
       project: fallbackProject,
@@ -489,7 +514,9 @@ export async function fetchScoreHistory(
       return history
     }
     return selectScoreHistory(id)
-  } catch {
+  } catch (error) {
+    reportRegistryReadError('get_score_history', error)
+    if (isProgrammingError(error)) throw error
     return selectScoreHistory(id)
   }
 }
