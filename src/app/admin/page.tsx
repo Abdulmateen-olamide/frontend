@@ -39,10 +39,7 @@ export default function AdminPage() {
 
   if (!connected) {
     return (
-      <main
-        id="main-content"
-        style={{ maxWidth: 560, margin: '64px auto', padding: '0 24px' }}
-      >
+      <main id="main-content" style={{ maxWidth: 560, margin: '64px auto', padding: '0 24px' }}>
         <Card style={{ padding: 32, textAlign: 'center' }}>
           <div className="hb-eyebrow" style={{ marginBottom: 12 }}>
             Privileged Area
@@ -92,10 +89,7 @@ export default function AdminPage() {
 
   if (!isAdmin) {
     return (
-      <main
-        id="main-content"
-        style={{ maxWidth: 560, margin: '64px auto', padding: '0 24px' }}
-      >
+      <main id="main-content" style={{ maxWidth: 560, margin: '64px auto', padding: '0 24px' }}>
         <Card style={{ padding: 32, textAlign: 'center' }}>
           <div
             style={{
@@ -131,7 +125,9 @@ export default function AdminPage() {
               margin: '0 0 24px',
             }}
           >
-            Connected wallet <strong style={{ color: 'var(--ink)' }}>{shortAddress(address ?? '')}</strong> is not an authorized administrator on this contract.
+            Connected wallet{' '}
+            <strong style={{ color: 'var(--ink)' }}>{shortAddress(address ?? '')}</strong> is not an
+            authorized administrator on this contract.
           </p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
             <Button variant="secondary" onClick={() => disconnect()}>

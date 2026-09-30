@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test'
 
 const ROUTES = ['/', '/explore', '/connect', '/deposit', '/withdraw']
+const SMOKE_ROUTES = ['/', '/explore']
+const isProductionCSP = process.env.E2E_PRODUCTION === 'true'
 
 test.describe('Security headers (#601)', () => {
   for (const route of ROUTES) {
@@ -41,4 +43,57 @@ test.describe('Security headers (#601)', () => {
     await page.waitForLoadState('networkidle')
     expect(violations).toEqual([])
   })
+})
+
+test.describe('Production CSP enforcement (#663)', () => {
+  test.skip(!isProductionCSP, 'Run with E2E_PRODUCTION=true to test production CSP')
+
+  test('production CSP header is enforced, not report-only', async ({ request }) => {
+    const res = await request.get('/')
+    const h = res.headers()
+
+    // In production with CSP_MODE=enforce, the header must be the enforcing variant
+    expect(h['content-security-policy']).toBeTruthy()
+    expect(h['content-security-policy-report-only']).toBeUndefined()
+
+    const csp = h['content-security-policy']!
+    // Production policy must NOT contain dev-only directives
+    expect(csp).not.toContain("'unsafe-eval'")
+    expect(csp).not.toContain('ws:')
+    expect(csp).not.toContain('http://localhost')
+    // Production policy must contain upgrade-insecure-requests
+    expect(csp).toContain('upgrade-insecure-requests')
+  })
+
+  for (const route of SMOKE_ROUTES) {
+    test(`${route} loads with no CSP violations in production`, async ({ page }) => {
+      const violations: Array<{ directive: string; blockedURI: string }> = []
+
+      // Listen for securitypolicyviolation events
+      await page.addInitScript(() => {
+        document.addEventListener('securitypolicyviolation', (e) => {
+          ;(window as any).__cspViolations = (window as any).__cspViolations || []
+          ;(window as any).__cspViolations.push({
+            directive: e.violatedDirective,
+            blockedURI: e.blockedURI,
+            originalPolicy: e.originalPolicy,
+          })
+        })
+      })
+
+      await page.goto(route)
+      await page.waitForLoadState('load')
+      // Wait a bit for any async resources to trigger violations
+      await page.waitForTimeout(2000)
+
+      // Check for violations
+      const capturedViolations = await page.evaluate(() => (window as any).__cspViolations || [])
+      violations.push(...capturedViolations)
+
+      if (violations.length > 0) {
+        console.error('CSP violations detected:', violations)
+      }
+      expect(violations).toEqual([])
+    })
+  }
 })

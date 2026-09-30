@@ -17,4 +17,12 @@ export const LOCALE_LABELS: Record<Locale, string> = {
   pt: 'PT',
 }
 
+export const LOCALE_NAMES: Record<Locale, string> = {
+  en: 'English',
+  fr: 'Français',
+  es: 'Español',
+  ar: 'العربية',
+  pt: 'Português',
+}
+
 export const RTL_LOCALES: ReadonlySet<Locale> = new Set(['ar'] as const)
