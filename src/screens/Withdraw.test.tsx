@@ -91,8 +91,8 @@ describe('Withdraw', () => {
 
     render(<Withdraw onDone={onDone} onBack={vi.fn()} />)
 
-    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '50' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Withdraw $50' }))
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '150' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw $150' }))
 
     await expect(
       screen.findByRole('heading', { name: 'Withdrawal settled' }),

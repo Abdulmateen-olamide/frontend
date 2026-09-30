@@ -307,10 +307,10 @@ describe('Integration: full deposit preview calculation', () => {
     expect(preview.return5y).toBeCloseTo(68.75, 2)
   })
 
-  it('minimum deposit (1 USDC) produces positive net proceeds', () => {
+  it('minimum deposit (100 USDC) produces positive net proceeds', () => {
     const preview = depositPreview(MIN_DEPOSIT_USDC, 1.0, 6)
     expect(preview.proceeds).toBeGreaterThan(0)
-    expect(preview.proceeds).toBe(0.99)
+    expect(preview.proceeds).toBe(99.99)
   })
 
   it('fee does not change with deposit size (flat fee model)', () => {
