@@ -420,8 +420,12 @@ export function detectWebGL(): boolean {
       canvas.getContext('webgl') ||
       canvas.getContext('experimental-webgl')
     cachedWebGLProbe = Boolean(gl)
-    const webglContext = gl as WebGLRenderingContext | null
-    webglContext?.getExtension('WEBGL_lose_context')?.loseContext()
+    const webglContext = gl as
+      | (WebGLRenderingContext & {
+          getExtension?: WebGLRenderingContext['getExtension']
+        })
+      | null
+    webglContext?.getExtension?.('WEBGL_lose_context')?.loseContext()
     return cachedWebGLProbe
   } catch {
     cachedWebGLProbe = false
