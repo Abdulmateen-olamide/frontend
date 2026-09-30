@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* eslint-disable @typescript-eslint/no-require-imports -- Node CLI scripts use CommonJS require */
 
 /**
  * Type coverage checker, enforces zero `any` usage in source files.
@@ -11,8 +10,8 @@
  * Exits 1 if any `any` types are found.
  */
 
-const fs = require('fs')
-const path = require('path')
+import fs from 'node:fs'
+import path from 'node:path'
 
 const SRC_DIR = path.join(process.cwd(), 'src')
 

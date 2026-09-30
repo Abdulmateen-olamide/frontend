@@ -18,9 +18,6 @@ export function scrollToFirstError(
   target.scrollIntoView({ behavior, block })
 
   if (focus) {
-    const focusable = target.querySelector<HTMLElement>("input, select, textarea, button") || (target as HTMLElement);
-    if (focusable && typeof focusable.focus === "function") {
-      setTimeout(() => focusable.focus({ preventScroll: true }), 300);
     const focusable =
       target.querySelector<HTMLElement>('input, select, textarea, button') ||
       (target as HTMLElement)
@@ -38,12 +35,6 @@ export function scrollToFirstError(
 }
 
 export function scrollToField(fieldId: string, options: ScrollToErrorOptions = {}): boolean {
-  const { behavior = "smooth", block = "center", focus = true } = options;
-  const el = document.getElementById(fieldId);
-  if (!el) return false;
-  el.scrollIntoView({ behavior, block });
-  if (focus && typeof (el as HTMLElement).focus === "function") {
-    setTimeout(() => (el as HTMLElement).focus({ preventScroll: true }), 300);
   const { behavior = 'smooth', block = 'center', focus = true } = options
   const el = document.getElementById(fieldId)
   if (!el) return false

@@ -11,7 +11,8 @@ import { LOCALE_LABELS, LOCALE_NAMES, type Locale } from '../i18n/config'
 import { useWallet, shortAddress } from '../wallet/WalletProvider'
 import { useTransactions } from '../wallet/TransactionsProvider'
 import { useTheme } from '../theme/ThemeProvider'
-import { HORIZON_URL, NETWORK_PASSPHRASE, networkLabel, getExplorerAccountUrl } from '../config/network'
+import { NETWORK_PASSPHRASE, networkLabel, getExplorerAccountUrl } from '../config/network'
+import { useHorizonHealth } from '../hooks/useHorizonHealth'
 import { networkMismatchMessage } from '../wallet/networkGuard'
 
 /** "Testnet", "Standalone", … — shown as a persistent pill on non-mainnet builds (#611). */
@@ -55,59 +56,11 @@ export function TopBar() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
 
-  const [networkOnline, setNetworkOnline] = useState(true)
+  const { isOnline: networkOnline } = useHorizonHealth()
 
   useEffect(() => {
     router.prefetch('/connect')
   }, [router])
-
-  useEffect(() => {
-    let cancelled = false
-    let currentController: AbortController | undefined
-
-    const check = async () => {
-      if (!navigator.onLine) {
-        if (!cancelled) setNetworkOnline(false)
-        return
-      }
-      const controller = new AbortController()
-      currentController = controller
-      const timeoutId = setTimeout(() => controller.abort(), 3000)
-      try {
-        const res = await fetch(HORIZON_URL, {
-          signal: controller.signal,
-          cache: 'no-store',
-        })
-        if (!cancelled) setNetworkOnline(res.ok || res.status < 500)
-      } catch {
-        if (!cancelled) setNetworkOnline(false)
-      } finally {
-        clearTimeout(timeoutId)
-      }
-    }
-
-    const handleOnline = () => {
-      void check()
-    }
-    const handleOffline = () => {
-      currentController?.abort()
-      if (!cancelled) setNetworkOnline(false)
-    }
-
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    void check()
-    const interval = setInterval(() => {
-      void check()
-    }, 15000)
-    return () => {
-      cancelled = true
-      clearInterval(interval)
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-      currentController?.abort()
-    }
-  }, [])
 
   // Theme state starts 'light' on server/first render (to avoid a hydration
   // mismatch), so the toggle icon can't be trusted until after mount — a
@@ -635,6 +588,14 @@ function WalletMenu({
 
   const [open, setOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
+
+  // Closing the menu resets the confirm step. Adjusting during render is React's
+  // sanctioned way to reset state for a changed prop (#598).
+  const [wasMenuOpen, setWasMenuOpen] = useState(false)
+  if (wasMenuOpen !== open) {
+    setWasMenuOpen(open)
+    if (!open) setConfirming(false)
+  }
   const [copied, setCopied] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -666,20 +627,18 @@ function WalletMenu({
   }, [open])
 
   useEffect(() => {
-    if (!open) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear the confirm state when the menu closes
-      setConfirming(false)
-      if (cancelTimerRef.current) {
-        clearTimeout(cancelTimerRef.current)
-        cancelTimerRef.current = null
+    if (open) {
+      const onDown = (e: MouseEvent) => {
+        if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
       }
-      return
+      document.addEventListener('mousedown', onDown)
+      return () => document.removeEventListener('mousedown', onDown)
     }
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    // Closing cancels a pending confirm-reset so it cannot fire on a later open.
+    if (cancelTimerRef.current) {
+      clearTimeout(cancelTimerRef.current)
+      cancelTimerRef.current = null
     }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
   }, [open])
 
   const copy = async () => {

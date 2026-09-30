@@ -296,5 +296,3 @@ export const HB_DATA: HeliobondData = {
   activity: [],
   search: () => INITIAL_PROJECTS,
 }
-  search: (_query: string) => INITIAL_PROJECTS,
-}

@@ -37,13 +37,6 @@ export function useVault(): VaultState {
     (typeof document === 'undefined' || !document.hidden)
 
   useEffect(() => {
-    const contractId = process.env.NEXT_PUBLIC_VAULT_CONTRACT_ID
-    if (!contractId || isDemo || !address) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- reflects "no live source" back to the caller
-      setLoading(false)
-      setFetchedAt((prev) => prev ?? new Date())
-      return
-    }
     if (!enabled || !address || document.hidden) return
 
     let cancelled = false
@@ -61,7 +54,9 @@ export function useVault(): VaultState {
       .catch((e: unknown) => {
         if (cancelled) return
         setError(e instanceof Error ? e.message : 'Could not read vault')
-        setFetchedAt(new Date())
+        // Do NOT advance `fetchedAt` on a failed read: the displayed values are
+        // whatever the last successful read produced, so keep their timestamp
+        // (issue #624).
       })
       .finally(() => {
         if (!cancelled) setCompletedRequest(requestKey)

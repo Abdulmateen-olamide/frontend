@@ -8,11 +8,6 @@ type Props = {
   params: Promise<{ id: string }> | { id: string }
 }
 
-  useEffect(() => {
-    if (!Number.isFinite(id)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- an invalid route id resolves synchronously to the not-found state
-      setData(null)
-      return
 /**
  * Per-project document metadata. The title is the project name only — the root
  * layout's `title.template` appends the brand, and `absolute` is used for the
