@@ -35,7 +35,7 @@ vi.mock('../../lib/api', () => ({
 describe('ExplorePage (Server Component)', () => {
   it('generates a localized title and description for SEO', async () => {
     const meta = await generateMetadata()
-    expect(meta.title).toBe(en.Metadata.explore.title)
+    expect(meta.title).toMatchObject({ default: en.Metadata.explore.title })
     expect(meta.description).toBe(en.Metadata.explore.description)
     // Indexable public content — never noindex.
     expect(meta.robots).toBeUndefined()

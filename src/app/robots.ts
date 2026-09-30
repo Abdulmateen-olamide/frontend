@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next'
 import { DEV_ROUTES } from '../lib/devRoutes'
-import { PRIVATE_ROUTES, PUBLIC_ROUTES } from '../lib/routeMetadata'
+import { CANONICAL_ORIGIN, PRIVATE_ROUTES, PUBLIC_ROUTES } from '../lib/routeMetadata'
 
 /**
  * The wallet-private list is derived from the same table the page metadata uses
@@ -14,6 +14,6 @@ export default function robots(): MetadataRoute.Robots {
       allow: [...PUBLIC_ROUTES],
       disallow: [...PRIVATE_ROUTES, ...DEV_ROUTES],
     },
-    sitemap: 'https://heliobond.vercel.app/sitemap.xml',
+    sitemap: `${CANONICAL_ORIGIN}/sitemap.xml`,
   }
 }

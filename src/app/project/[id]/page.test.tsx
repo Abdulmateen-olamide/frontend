@@ -115,7 +115,9 @@ describe('ProjectDetailPage & generateMetadata', () => {
   it('noindexes a project that does not exist', async () => {
     mockGetProject.mockResolvedValue(null)
     const meta = await generateMetadata({ params: Promise.resolve({ id: '999' }) })
-    expect(meta.title).toEqual({ absolute: `${en.Metadata.projectNotFound.title} | Heliobond` })
+    expect(meta.title).toEqual({
+      absolute: `${en.Metadata.projectNotFound.title} | Heliobond`,
+    })
     expect(meta.description).toBe(en.Metadata.projectNotFound.description)
     expect(meta.robots).toEqual({ index: false, follow: false })
   })

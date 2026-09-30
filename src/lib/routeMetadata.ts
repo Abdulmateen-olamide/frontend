@@ -18,6 +18,13 @@ import type { Metadata } from 'next'
 /** Applied by the root layout to every child segment's title. */
 export const TITLE_TEMPLATE = '%s | Heliobond'
 
+/**
+ * The canonical origin. Used for `metadataBase` (so relative OpenGraph and
+ * icon paths resolve to absolute URLs), the sitemap, and the `robots.txt`
+ * sitemap pointer — one place, so they can't disagree.
+ */
+export const CANONICAL_ORIGIN = 'https://heliobond.vercel.app'
+
 /** Home page title, and the fallback for any segment that sets no title. */
 export const SITE_TITLE = 'Sunlight made financial'
 
@@ -65,6 +72,12 @@ export type MetadataTranslator = (key: string) => string
 /**
  * Document metadata for a route, or `undefined` when the route is not in the
  * table (a dynamic segment with its own `generateMetadata`, or a dev route).
+ *
+ * Each entry re-declares `title.template` instead of relying on the root
+ * layout's alone. Next.js only carries the nearest ancestor template down, so a
+ * segment layout that set a plain string title would strip the brand suffix from
+ * the pages nested under it — `/portfolio/tax-reports` under `/portfolio`, for
+ * instance. Restating the same constant keeps every level of the chain correct.
  */
 export function buildRouteMetadata(path: string, t: MetadataTranslator): Metadata | undefined {
   const route = ROUTES.find((r) => r.path === path)
@@ -73,12 +86,22 @@ export function buildRouteMetadata(path: string, t: MetadataTranslator): Metadat
   const title = t(`${route.key}.title`)
   const description = t(`${route.key}.description`)
   const metadata: Metadata = {
-    title,
+    title: { default: title, template: TITLE_TEMPLATE },
     description,
     openGraph: { title, description, type: 'website' },
   }
   if (route.private) metadata.robots = NOINDEX
   return metadata
+}
+
+/**
+ * A title that already carries the brand suffix. Next.js applies
+ * `title.template` to child segments only, and the root page shares the root
+ * layout's segment, so the home page composes its title from the same constant
+ * rather than dropping the brand.
+ */
+export function absoluteTitle(title: string): string {
+  return TITLE_TEMPLATE.replace('%s', title)
 }
 
 /** True when the route is wallet-private or internal. */

@@ -13,16 +13,18 @@ describe('routeMetadata() server helper (#657)', () => {
     'resolves localized copy for %s',
     async (path, key) => {
       const metadata = await routeMetadata(path)
-      expect(metadata.title).toBe(en.Metadata[key as keyof typeof en.Metadata].title)
-      expect(metadata.description).toBe(en.Metadata[key as keyof typeof en.Metadata].description)
+      const copy = en.Metadata[key as keyof typeof en.Metadata]
+      expect(metadata.title).toMatchObject({ default: copy.title })
+      expect(metadata.description).toBe(copy.description)
     },
   )
 
   it('applies the brand suffix through the root template, not by hand', async () => {
     const metadata = await routeMetadata('/portfolio')
-    const title = String(metadata.title)
-    expect(title.endsWith('| Heliobond')).toBe(false)
-    expect(TITLE_TEMPLATE.replace('%s', title)).toBe(`${title} | Heliobond`)
+    expect(metadata.title).toMatchObject({
+      default: en.Metadata.portfolio.title,
+      template: TITLE_TEMPLATE,
+    })
   })
 
   it('noindexes every wallet-private route and nothing else', async () => {
@@ -36,9 +38,10 @@ describe('routeMetadata() server helper (#657)', () => {
 
   it('sets a matching openGraph title and description on every route', async () => {
     for (const { path } of ROUTES) {
-      const { openGraph } = await routeMetadata(path)
-      expect(openGraph?.title).toBe((await routeMetadata(path)).title)
-      expect(openGraph?.description).toBe((await routeMetadata(path)).description)
+      const metadata = await routeMetadata(path)
+      const title = (metadata.title as { default: string }).default
+      expect(metadata.openGraph?.title).toBe(title)
+      expect(metadata.openGraph?.description).toBe(metadata.description)
     }
   })
 

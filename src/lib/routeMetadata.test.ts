@@ -10,6 +10,7 @@ import {
   TITLE_TEMPLATE,
   buildRouteMetadata,
   isPrivateRoute,
+  absoluteTitle,
 } from './routeMetadata'
 
 const APP_DIR = path.resolve(__dirname, '..', 'app')
@@ -48,8 +49,12 @@ function robotsOf(path: string): unknown {
 
 /** The title a browser tab shows, after the root layout applies the template. */
 function renderedTitle(path: string): string {
-  const metadata = buildRouteMetadata(path, t)
-  return TITLE_TEMPLATE.replace('%s', String(metadata?.title))
+  const title = buildRouteMetadata(path, t)?.title
+  if (typeof title === 'string') return TITLE_TEMPLATE.replace('%s', title)
+  if (title && typeof title === 'object' && !('absolute' in title)) {
+    return TITLE_TEMPLATE.replace('%s', title.default)
+  }
+  return String(title)
 }
 
 describe('route metadata (#657)', () => {
@@ -62,7 +67,7 @@ describe('route metadata (#657)', () => {
     'gives %s a localized title and description',
     (route, key) => {
       const metadata = buildRouteMetadata(route, t)
-      expect(metadata?.title).toBe(t(`${key}.title`))
+      expect(metadata?.title).toMatchObject({ default: t(`${key}.title`) })
       expect(metadata?.description).toBe(t(`${key}.description`))
     },
   )
@@ -78,8 +83,16 @@ describe('route metadata (#657)', () => {
 
   it('leaves the brand suffix to the template instead of hand-writing it', () => {
     for (const route of ROUTES) {
-      expect(String(buildRouteMetadata(route.path, t)?.title)).not.toMatch(/\s\|\s*Heliobond$/)
+      const title = buildRouteMetadata(route.path, t)?.title
+      // Each entry restates the template, so the suffix is never typed by hand.
+      expect(title).toMatchObject({ template: TITLE_TEMPLATE })
+      expect(String((title as { default: string }).default)).not.toMatch(/\s\|\s*Heliobond$/)
     }
+  })
+
+  it('composes absolute titles from the same template, for the root page', () => {
+    expect(absoluteTitle('Sunlight made financial')).toBe('Sunlight made financial | Heliobond')
+    expect(absoluteTitle('Home')).not.toContain('%s')
   })
 
   it('marks wallet-private routes noindex and leaves public routes indexable', () => {

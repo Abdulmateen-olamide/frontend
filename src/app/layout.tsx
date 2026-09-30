@@ -8,13 +8,16 @@ import { fontVariables } from '../theme/fonts'
 import { LocaleProvider, type Messages } from '../i18n/LocaleProvider'
 import { type Locale, RTL_LOCALES } from '../i18n/config'
 import { THEME_SCRIPT } from '../theme/themeScript'
-import { TITLE_TEMPLATE } from '../lib/routeMetadata'
+import { CANONICAL_ORIGIN, TITLE_TEMPLATE } from '../lib/routeMetadata'
 import '../styles/index.css'
 
 const TopBar = dynamic(() => import('../shell/TopBar').then((m) => m.TopBar))
 const Footer = dynamic(() => import('../shell/Footer').then((m) => m.Footer))
 
 export const metadata: Metadata = {
+  // Resolves the relative OpenGraph / Twitter image and icon paths below into
+  // absolute URLs, using the same origin as robots.txt and sitemap.xml.
+  metadataBase: new URL(CANONICAL_ORIGIN),
   // Child segments contribute only their page title; the template appends the
   // brand, so no route has to repeat "| Heliobond" by hand (#657).
   title: {

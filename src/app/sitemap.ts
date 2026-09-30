@@ -1,8 +1,8 @@
 import type { MetadataRoute } from 'next'
 import { getProjects } from '../lib/api'
-import { PUBLIC_ROUTES } from '../lib/routeMetadata'
+import { CANONICAL_ORIGIN, PUBLIC_ROUTES } from '../lib/routeMetadata'
 
-const BASE_URL = 'https://heliobond.vercel.app'
+const BASE_URL = CANONICAL_ORIGIN
 
 type SitemapEntry = MetadataRoute.Sitemap[number]
 

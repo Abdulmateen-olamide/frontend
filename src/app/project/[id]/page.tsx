@@ -1,6 +1,7 @@
 import { Metadata } from 'next'
 import { getTranslations } from 'next-intl/server'
 import { getProject } from '../../../lib/api'
+import { absoluteTitle } from '../../../lib/routeMetadata'
 import { ProjectDetailClient } from './ProjectDetailClient'
 
 type Props = {
@@ -18,7 +19,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const id = Number(resolvedParams?.id)
 
   const notFound = (): Metadata => ({
-    title: { absolute: `${t('projectNotFound.title')} | Heliobond` },
+    title: { absolute: absoluteTitle(t('projectNotFound.title')) },
     description: t('projectNotFound.description'),
     robots: { index: false, follow: false },
   })

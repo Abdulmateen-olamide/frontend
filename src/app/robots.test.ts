@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import robots from './robots'
 import sitemap from './sitemap'
 import { DEV_ROUTES, devRoutesEnabled } from '../lib/devRoutes'
-import { PRIVATE_ROUTES, PUBLIC_ROUTES } from '../lib/routeMetadata'
+import { PRIVATE_ROUTES, CANONICAL_ORIGIN, PUBLIC_ROUTES } from '../lib/routeMetadata'
 
 function rules() {
   const value = robots().rules
@@ -47,8 +47,8 @@ describe('indexing rules (#657)', () => {
     expect(overlap).toEqual([])
   })
 
-  it('points at the sitemap', () => {
-    expect(robots().sitemap).toBe('https://heliobond.vercel.app/sitemap.xml')
+  it('points at the sitemap on the canonical origin', () => {
+    expect(robots().sitemap).toBe(`${CANONICAL_ORIGIN}/sitemap.xml`)
   })
 })
 
@@ -72,7 +72,7 @@ describe('sitemap (#657)', () => {
 
   it('uses the canonical base URL for every entry', async () => {
     for (const entry of await sitemap()) {
-      expect(new URL(entry.url).origin).toBe('https://heliobond.vercel.app')
+      expect(new URL(entry.url).origin).toBe(CANONICAL_ORIGIN)
     }
   })
 
