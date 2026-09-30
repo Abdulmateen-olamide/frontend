@@ -3,11 +3,14 @@ import { useTranslations } from 'next-intl'
 import {
   Badge,
   Button,
+  DemoDataBadge,
   PinIcon,
   ScoreGauge,
+  ShieldAlertIcon,
   ShieldCheckIcon,
   WatchlistButton,
   YieldAlertButton,
+  InfoTooltip,
 } from '../components'
 import { Sparkline as SparklineUnmemoized } from '../components/Sparkline'
 const Sparkline = memo(SparklineUnmemoized)
@@ -15,6 +18,7 @@ import { formatMoney } from '../lib/format'
 
 import { type Project } from '../data'
 import { type ProjectDetail as ProjectDetailData } from '../data/projectDetails'
+import { type MetadataVerificationStatus } from '../wallet/registry'
 
 /**
  * ProjectDetail — the full story of one project the pool funds. Hero, the
@@ -25,15 +29,19 @@ import { type ProjectDetail as ProjectDetailData } from '../data/projectDetails'
 export interface ProjectDetailProps {
   project: Project
   detail: ProjectDetailData
+  verifiedMetadata?: MetadataVerificationStatus
   onInvest: () => Promise<string>
   onBack?: () => void
+  children?: React.ReactNode
 }
 
 export const ProjectDetail = memo(function ProjectDetail({
   project,
   detail,
+  verifiedMetadata = 'unverified',
   onInvest,
   onBack,
+  children,
 }: ProjectDetailProps) {
   const t = useTranslations('ProjectDetail')
   const tc = useTranslations('Common')
@@ -61,6 +69,7 @@ export const ProjectDetail = memo(function ProjectDetail({
   const greenHistory = useMemo(() => greenPoints.map((p) => p.value), [greenPoints])
   return (
     <main id="main-content" style={{ maxWidth: 860, margin: '0 auto', padding: '40px 24px 96px' }}>
+      <DemoDataBadge style={{ marginBottom: 16 }} />
       {onBack && (
         <button
           type="button"
@@ -108,9 +117,24 @@ export const ProjectDetail = memo(function ProjectDetail({
             gap: 12,
           }}
         >
-          <Badge tone="growth" icon={<ShieldCheckIcon />}>
-            {t('verifiedSince', { since: creatorSince })}
-          </Badge>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Badge tone="growth" icon={<ShieldCheckIcon />}>
+              {t('verifiedSince', { since: creatorSince })}
+            </Badge>
+            {verifiedMetadata === 'verified' && (
+              <Badge tone="growth" icon={<ShieldCheckIcon />}>
+                {t('verifiedMetadata')}
+              </Badge>
+            )}
+            {verifiedMetadata === 'mismatch' && (
+              <Badge tone="ember" role="status" icon={<ShieldAlertIcon />}>
+                {t('metadataMismatch')}
+              </Badge>
+            )}
+            {verifiedMetadata === 'unverified' && (
+              <Badge tone="neutral">{t('unverifiedMetadata')}</Badge>
+            )}
+          </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <YieldAlertButton
               bondId={project.id}
@@ -328,6 +352,7 @@ export const ProjectDetail = memo(function ProjectDetail({
               >
                 {t('yieldLabel')}
               </span>
+              <InfoTooltip label={t('yieldHelpLabel')} content={t('yieldHelp')} />
             </div>
           </div>
         </div>
@@ -590,6 +615,9 @@ export const ProjectDetail = memo(function ProjectDetail({
           </div>
         )}
       </section>
+
+      {/* Price history chart */}
+      {children}
     </main>
   )
 })

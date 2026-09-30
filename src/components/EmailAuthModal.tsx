@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import {
   detectEmailAuthProvider,
@@ -9,6 +9,7 @@ import {
 import { SocialAccountConflictWarning } from './SocialAccountConflictWarning'
 import { Button } from './Button'
 import { registerBiometric, loginBiometric } from '../lib/webauthn'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 
 export interface EmailAuthModalProps {
   /** Whether the modal is visible. */
@@ -31,6 +32,8 @@ export function EmailAuthModal({ open, onClose, onSuccess, onSocialLogin }: Emai
   const [bypassWarning, setBypassWarning] = useState(false)
   const [bioLoading, setBioLoading] = useState(false)
   const [bioError, setBioError] = useState<string | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(open, dialogRef, undefined, onClose)
 
   if (!open) return null
 
@@ -65,7 +68,7 @@ export function EmailAuthModal({ open, onClose, onSuccess, onSocialLogin }: Emai
       if (onSuccess) onSuccess(email)
       onClose()
     } catch (err: unknown) {
-      setBioError((err as Error).message || 'Biometric login failed')
+      setBioError(err instanceof Error ? err.message : 'Biometric login failed')
     } finally {
       setBioLoading(false)
     }
@@ -77,11 +80,12 @@ export function EmailAuthModal({ open, onClose, onSuccess, onSocialLogin }: Emai
     setBioError(null)
     try {
       await registerBiometric(email)
-      // After registration, log in automatically
+      // Establish a verified login session after enrolling the credential.
+      await loginBiometric(email)
       if (onSuccess) onSuccess(email)
       onClose()
     } catch (err: unknown) {
-      setBioError((err as Error).message || 'Biometric registration failed')
+      setBioError(err instanceof Error ? err.message : 'Biometric registration failed')
     } finally {
       setBioLoading(false)
     }
@@ -105,6 +109,7 @@ export function EmailAuthModal({ open, onClose, onSuccess, onSocialLogin }: Emai
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="email-auth-title"

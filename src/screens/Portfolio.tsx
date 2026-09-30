@@ -1,20 +1,35 @@
 'use client'
 
-import { memo, type CSSProperties, type ReactNode } from 'react'
-import { useTranslations } from 'next-intl'
-import { Button, StatBlock, LiquidityMeter, Card } from '../components'
+import { TransactionPendingError } from '../wallet/transactions'
+
+import { memo, useState, useEffect, useCallback, type CSSProperties, type ReactNode } from 'react'
+import Link from 'next/link'
+import { useLocale, useTranslations } from 'next-intl'
+import { Button, StatBlock, LiquidityMeter, Card, AddressChip, useToast } from '../components'
 import { Helio } from '../brand/Helio'
-import { selectActivity, selectYou } from '../state/selectors'
 import { useWallet } from '../wallet/WalletProvider'
+import { getPendingClaims, removePendingClaim, type PendingClaim } from '../wallet/pendingClaims'
+import { submitClaim } from '../wallet/vault'
+import { formatDate, formatDecimal } from '../lib/format'
+import { OnChainPosition } from './OnChainPosition'
+import { usePortfolio } from '../hooks/usePortfolio'
+import { getVirtualRange } from '../lib/virtualRange'
+import { PortfolioPerformanceChart } from '../components/PortfolioPerformanceChart'
 
 const MemoizedHelio = memo(Helio)
 
 const MemoizedLiquidityMeter = memo(LiquidityMeter)
+const ACTIVITY_ROW_HEIGHT = 84
+const ACTIVITY_VIEWPORT_HEIGHT = 504
+const ACTIVITY_OVERSCAN = 2
 
 /**
  * Portfolio — calm dashboard. Headline value with delta since deposit, the
  * personal mini-Helio, and three always-visible figures including the permanent
  * "Available to withdraw now" liquidity truth.
+ *
+ * Driven by the connected wallet's live Soroban position (get_portfolio + claimable_yield)
+ * with graceful fallback to demo fixtures when disconnected or in demo mode. (#589)
  */
 export interface PortfolioProps {
   onWithdraw: () => void
@@ -23,12 +38,59 @@ export interface PortfolioProps {
 
 export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: PortfolioProps) {
   const t = useTranslations('Portfolio')
-  const { connected, connect } = useWallet()
-  // Flat selectors — one level, no drilling through the nested state shape.
-  const you = selectYou()
-  const activity = selectActivity()
+  const locale = useLocale()
+  const { connected, connect, address, sign } = useWallet()
+  const { toast } = useToast()
+
+  // Drive portfolio metrics dynamically from the connected wallet
+  const { portfolio, you, activity, loading, error, refresh } = usePortfolio()
+
   const risk = { score: you.riskScore, level: you.riskLevel }
   const referralLink = you.referralLink
+
+  const [pendingClaims, setPendingClaims] = useState<PendingClaim[]>([])
+  const [claiming, setClaiming] = useState(false)
+  const [activityScrollTop, setActivityScrollTop] = useState(0)
+  const activityRange = getVirtualRange(
+    activity.length,
+    activityScrollTop,
+    ACTIVITY_VIEWPORT_HEIGHT,
+    ACTIVITY_ROW_HEIGHT,
+    ACTIVITY_OVERSCAN,
+  )
+
+  const refreshClaims = useCallback(() => {
+    setPendingClaims(getPendingClaims(address ?? undefined))
+  }, [address])
+
+  useEffect(() => {
+    refreshClaims()
+  }, [refreshClaims])
+
+  const handleClaim = async () => {
+    setClaiming(true)
+    try {
+      await submitClaim(address ?? '', sign)
+      pendingClaims.forEach((c) => removePendingClaim(c.hash))
+      refreshClaims()
+      toast({
+        tone: 'success',
+        title: 'Withdrawals claimed',
+        message: 'Queued withdrawals claimed successfully and paid out in USDC.',
+      })
+    } catch (e) {
+      toast({
+        tone: e instanceof TransactionPendingError ? 'solar' : 'error',
+        title:
+          e instanceof TransactionPendingError
+            ? 'Still pending — we’ll keep checking'
+            : 'Claim failed',
+        message: e instanceof Error ? e.message : 'Could not process claim at this time.',
+      })
+    } finally {
+      setClaiming(false)
+    }
+  }
 
   if (!connected) {
     return (
@@ -66,8 +128,69 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
     )
   }
 
+  const integerVal = Math.floor(you.value)
+  const decimalPart = (you.value % 1).toFixed(2).slice(2)
+
   return (
     <main id="main-content" style={{ maxWidth: 1080, margin: '0 auto', padding: '48px 32px 80px' }}>
+      {/* On-chain loading state banner */}
+      {loading && !portfolio && (
+        <Card data-testid="portfolio-loading" style={{ padding: 22, marginBottom: 28 }}>
+          <p
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: 'var(--type-small)',
+              color: 'var(--ink-60)',
+              margin: 0,
+            }}
+          >
+            Reading your portfolio position from Soroban…
+          </p>
+        </Card>
+      )}
+
+      {/* On-chain error state banner */}
+      {error && (
+        <Card data-testid="portfolio-error" style={{ padding: 22, marginBottom: 28 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <p
+              role="alert"
+              style={{
+                fontFamily: 'var(--font-body)',
+                fontSize: 'var(--type-small)',
+                color: 'var(--ember)',
+                margin: 0,
+              }}
+            >
+              {error}
+            </p>
+            <Button variant="secondary" size="sm" onClick={refresh}>
+              Retry
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* On-chain empty holdings state banner (0 shares) */}
+      {portfolio && portfolio.shares === 0 && portfolio.totalDeposited === 0 && (
+        <Card data-testid="portfolio-empty" style={{ padding: 22, marginBottom: 28 }}>
+          <h3 style={cardTitle}>No active vault position found</h3>
+          <p
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: 'var(--type-small)',
+              color: 'var(--ink-60)',
+              margin: '4px 0 16px',
+            }}
+          >
+            Your connected wallet has not deposited into this green-bond vault yet.
+          </p>
+          <Button variant="primary" onClick={onDeposit}>
+            Make your first deposit
+          </Button>
+        </Card>
+      )}
+
       <div
         style={{
           display: 'flex',
@@ -82,14 +205,16 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
           <div className="hb-eyebrow" style={{ marginBottom: 14 }}>
             {t('eyebrow')}
           </div>
-          <StatBlock
-            label={t('currentValue')}
-            value={`$${Math.floor(you.value).toLocaleString('en-US')}`}
-            decimals={`.${String(you.value).split('.')[1] ?? '00'}`}
-            delta={`+$${you.deltaAbs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${you.deltaPct}%) ${t('sinceDeposit')}`}
-            size="lg"
-            stackOnMobile
-          />
+          <div data-testid="portfolio-value">
+            <StatBlock
+              label={t('currentValue')}
+              value={`$${integerVal.toLocaleString('en-US')}`}
+              decimals={`.${decimalPart}`}
+              delta={`+$${you.deltaAbs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${you.deltaPct}%) ${t('sinceDeposit')}`}
+              size="lg"
+              stackOnMobile
+            />
+          </div>
           <p
             style={{
               fontFamily: 'var(--font-body)',
@@ -118,10 +243,24 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
       {/* three always-visible figures */}
       <div className="hb-figures-grid" style={{ margin: '28px 0' }}>
         <Card style={{ padding: 22 }}>
-          <StatBlock label={t('hbsHeld')} value="24,041" decimals=".2310" size="md" />
+          <div data-testid="portfolio-shares">
+            <StatBlock
+              label={t('hbsHeld')}
+              value={Math.floor(you.hbs).toLocaleString('en-US')}
+              decimals={`.${(you.hbs % 1).toFixed(4).slice(2)}`}
+              size="md"
+            />
+          </div>
         </Card>
         <Card style={{ padding: 22 }}>
-          <StatBlock label={t('poolShare')} value="0.49" unit="%" size="md" />
+          <div data-testid="portfolio-poolshare">
+            <StatBlock
+              label={t('poolShare')}
+              value={formatDecimal(you.poolSharePct, 2)}
+              unit="%"
+              size="md"
+            />
+          </div>
         </Card>
         <Card style={{ padding: 22 }}>
           <MemoizedLiquidityMeter liquid={236} total={482} currency="$" showExplanation={false} />
@@ -137,6 +276,104 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
           </p>
         </Card>
       </div>
+
+      <OnChainPosition />
+      {address && <PortfolioPerformanceChart address={address} />}
+
+      {/* Pending queued withdrawals */}
+      <Card style={{ padding: 22, marginBottom: 28 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 12,
+            marginBottom: pendingClaims.length > 0 ? 16 : 0,
+          }}
+        >
+          <div>
+            <h3 style={cardTitle}>Pending withdrawals</h3>
+            <p
+              style={{
+                fontFamily: 'var(--font-body)',
+                fontSize: 'var(--type-small)',
+                color: 'var(--ink-60)',
+                margin: '4px 0 0',
+              }}
+            >
+              {pendingClaims.length > 0
+                ? `${pendingClaims.length} queued FIFO claim${pendingClaims.length > 1 ? 's' : ''} awaiting vault liquidity.`
+                : 'No queued withdrawals. Immediate liquidity is available for standard payouts.'}
+            </p>
+          </div>
+          {pendingClaims.length > 0 && (
+            <Button variant="primary" size="sm" disabled={claiming} onClick={handleClaim}>
+              {claiming ? 'Claiming...' : 'Claim available liquidity'}
+            </Button>
+          )}
+        </div>
+        {pendingClaims.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {pendingClaims.map((claim) => (
+              <div
+                key={claim.id || claim.hash}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '12px 14px',
+                  background: 'var(--ink-04)',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--ink-12)',
+                  flexWrap: 'wrap',
+                  gap: 12,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-data)',
+                      fontSize: 'var(--type-small)',
+                      fontWeight: 600,
+                      color: 'var(--solar)',
+                      background: 'rgba(234, 179, 8, 0.15)',
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-pill)',
+                    }}
+                  >
+                    Queued
+                  </span>
+                  {claim.amount !== undefined && (
+                    <span
+                      style={{
+                        fontFamily: 'var(--font-data)',
+                        fontSize: 'var(--type-body)',
+                        fontWeight: 600,
+                        color: 'var(--ink)',
+                      }}
+                    >
+                      ${formatDecimal(claim.amount, 2)} USDC
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-body)',
+                      fontSize: 'var(--type-caption)',
+                      color: 'var(--ink-60)',
+                    }}
+                  >
+                    {formatDate(claim.timestamp, locale)}
+                  </span>
+                  <AddressChip value={claim.hash} label="transaction hash" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       {/* Portfolio risk indicator from bond ratings mix */}
       <Card style={{ padding: 22, marginBottom: 28 }}>
@@ -260,9 +497,25 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
               justifyContent: 'space-between',
               alignItems: 'center',
               marginBottom: 8,
+              flexWrap: 'wrap',
+              gap: 12,
             }}
           >
-            <h3 style={cardTitle}>{t('activityTitle')}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <h3 style={cardTitle}>{t('activityTitle')}</h3>
+              <Link
+                href="/portfolio/tax-reports"
+                style={{
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--type-small)',
+                  fontWeight: 600,
+                  color: 'var(--ink-60)',
+                  textDecoration: 'none',
+                }}
+              >
+                {t('taxReports')} →
+              </Link>
+            </div>
             <span
               style={{
                 fontFamily: 'var(--font-body)',
@@ -273,63 +526,90 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
               {t('activityNote')}
             </span>
           </div>
-          {activity.map((a, i) => (
-            <div
-              key={a.hash}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                padding: '12px 0',
-                borderTop: i ? '1px solid var(--ink-12)' : 'none',
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div
-                  style={{
-                    fontFamily: 'var(--font-body)',
-                    fontSize: 'var(--type-small)',
-                    fontWeight: 600,
-                    color: 'var(--ink)',
-                    overflowWrap: 'anywhere',
-                  }}
-                >
-                  {a.kind}
-                </div>
-                <div
-                  style={{
-                    fontFamily: 'var(--font-body)',
-                    fontSize: 'var(--type-caption)',
-                    color: 'var(--ink-60)',
-                  }}
-                >
-                  {a.amount}
-                  {a.shares ? ` · ${a.shares}` : ''}
-                </div>
-              </div>
-              <div style={{ textAlign: 'end' }}>
-                <div
-                  style={{
-                    fontFamily: 'var(--font-body)',
-                    fontSize: 'var(--type-caption)',
-                    color: 'var(--ink-60)',
-                  }}
-                >
-                  {a.when}
-                </div>
-                <div
-                  style={{
-                    fontFamily: 'var(--font-data)',
-                    fontSize: 'var(--type-eyebrow)',
-                    color: 'var(--ink-40)',
-                  }}
-                >
-                  {a.hash} ↗
-                </div>
-              </div>
+          <div
+            role="region"
+            aria-label={`Portfolio activity, ${activity.length} items`}
+            tabIndex={0}
+            onScroll={(event) => setActivityScrollTop(event.currentTarget.scrollTop)}
+            style={{
+              maxHeight: ACTIVITY_VIEWPORT_HEIGHT,
+              overflowY: 'auto',
+              overscrollBehavior: 'contain',
+            }}
+          >
+            <div role="list" aria-live="polite">
+              <div aria-hidden="true" style={{ height: activityRange.topPadding }} />
+              {activity.slice(activityRange.start, activityRange.end).map((a, offset) => {
+                const index = activityRange.start + offset
+                return (
+                  <div
+                    key={a.hash}
+                    role="listitem"
+                    aria-posinset={index + 1}
+                    aria-setsize={activity.length}
+                    style={{
+                      boxSizing: 'border-box',
+                      height: ACTIVITY_ROW_HEIGHT,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 12,
+                      overflow: 'hidden',
+                      borderTop: index ? '1px solid var(--ink-12)' : 'none',
+                    }}
+                  >
+                    <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          fontFamily: 'var(--font-body)',
+                          fontSize: 'var(--type-small)',
+                          fontWeight: 600,
+                          color: 'var(--ink)',
+                          overflowWrap: 'anywhere',
+                        }}
+                      >
+                        {a.kind}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: 'var(--font-body)',
+                          fontSize: 'var(--type-caption)',
+                          color: 'var(--ink-60)',
+                        }}
+                      >
+                        {a.amount}
+                        {a.shares ? ` · ${a.shares}` : ''}
+                      </div>
+                    </div>
+                    <div style={{ flex: '0 0 auto', textAlign: 'end' }}>
+                      <div
+                        style={{
+                          fontFamily: 'var(--font-body)',
+                          fontSize: 'var(--type-caption)',
+                          color: 'var(--ink-60)',
+                        }}
+                      >
+                        {a.when}
+                      </div>
+                      <div
+                        style={{
+                          maxWidth: 140,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          fontFamily: 'var(--font-data)',
+                          fontSize: 'var(--type-eyebrow)',
+                          color: 'var(--ink-40)',
+                        }}
+                      >
+                        {a.hash} ↗
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+              <div aria-hidden="true" style={{ height: activityRange.bottomPadding }} />
             </div>
-          ))}
+          </div>
         </Card>
       </div>
     </main>

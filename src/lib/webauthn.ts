@@ -28,72 +28,80 @@ interface PublicKeyCredentialJSON {
   response: Record<string, unknown>
 }
 
-interface CredentialDescriptorJSON {
-  id: string
-  type: PublicKeyCredentialType
-  transports?: AuthenticatorTransport[]
-}
-
-interface RegistrationBeginResponse {
-  challenge: string
-  rp: PublicKeyCredentialRpEntity
-  user: {
-    id: string
-    name: string
-    displayName: string
-  }
-  pubKeyCredParams: PublicKeyCredentialParameters[]
-  timeout?: number
-  excludeCredentials?: CredentialDescriptorJSON[]
-  authenticatorSelection?: AuthenticatorSelectionCriteria
-  attestation?: AttestationConveyancePreference
-  extensions?: AuthenticationExtensionsClientInputs
-}
-
-interface LoginBeginResponse {
-  challenge: string
-  timeout?: number
-  rpId?: string
-  allowCredentials?: CredentialDescriptorJSON[]
-  userVerification?: UserVerificationRequirement
-  extensions?: AuthenticationExtensionsClientInputs
-}
-
-async function postJSON<T = unknown>(url: string, body: unknown): Promise<T> {
+async function postJSON<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    cache: 'no-store',
     body: JSON.stringify(body),
   })
   if (!res.ok) {
-    const err = (await res.json().catch(() => ({ error: res.statusText }))) as { error?: string }
+    const err = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(err.error || `HTTP ${res.status}`)
   }
-  return res.json() as Promise<T>
+  return res.json()
 }
 
-export async function registerBiometric(username: string): Promise<unknown> {
-  const options = await postJSON<RegistrationBeginResponse>('/webauthn/register/begin', {
-    username,
-  })
+export interface VerificationResult {
+  verified: true
+}
+type DescriptorJSON = Omit<PublicKeyCredentialDescriptor, 'id'> & { id: string }
+type RegistrationOptionsJSON = Omit<
+  PublicKeyCredentialCreationOptions,
+  'challenge' | 'user' | 'excludeCredentials'
+> & {
+  challenge: string
+  user: Omit<PublicKeyCredentialUserEntity, 'id'> & { id: string }
+  excludeCredentials?: DescriptorJSON[]
+}
+type LoginOptionsJSON = Omit<
+  PublicKeyCredentialRequestOptions,
+  'challenge' | 'allowCredentials'
+> & {
+  challenge: string
+  allowCredentials?: DescriptorJSON[]
+}
+function requireSupport(username: string) {
+  if (!username.trim()) throw new Error('Username is required')
+  if (typeof window === 'undefined' || !window.PublicKeyCredential || !navigator.credentials) {
+    throw new Error('WebAuthn is not supported')
+  }
+}
+async function complete(
+  url: string,
+  username: string,
+  credential: PublicKeyCredentialJSON,
+): Promise<VerificationResult> {
+  const result = await postJSON<unknown>(url, { username, credential })
+  if (
+    !result ||
+    typeof result !== 'object' ||
+    !('verified' in result) ||
+    result.verified !== true
+  ) {
+    throw new Error('Server did not verify the credential')
+  }
+  return { verified: true }
+}
 
-  // Convert base64url fields to ArrayBuffer for WebAuthn API
-  const publicKeyOptions: PublicKeyCredentialCreationOptions = {
-    ...options,
-    challenge: base64urlToArrayBuffer(options.challenge),
-    user: {
-      ...options.user,
-      id: base64urlToArrayBuffer(options.user.id),
-    },
-    excludeCredentials: options.excludeCredentials?.map((cred) => ({
+export async function registerBiometric(username: string): Promise<VerificationResult> {
+  requireSupport(username)
+  const json = await postJSON<RegistrationOptionsJSON>('/webauthn/register/begin', { username })
+
+  const options: PublicKeyCredentialCreationOptions = {
+    ...json,
+    challenge: base64urlToArrayBuffer(json.challenge),
+    user: { ...json.user, id: base64urlToArrayBuffer(json.user.id) },
+    excludeCredentials: json.excludeCredentials?.map((cred) => ({
       ...cred,
       id: base64urlToArrayBuffer(cred.id),
     })),
   }
 
   const credential = (await navigator.credentials.create({
-    publicKey: publicKeyOptions,
-  })) as (PublicKeyCredential & { response: AuthenticatorAttestationResponse }) | null
+    publicKey: options,
+  })) as PublicKeyCredential & { response: AuthenticatorAttestationResponse }
 
   if (!credential) throw new Error('Registration canceled')
 
@@ -107,24 +115,25 @@ export async function registerBiometric(username: string): Promise<unknown> {
     },
   }
 
-  return postJSON('/webauthn/register/complete', { username, credential: credentialJSON })
+  return complete('/webauthn/register/complete', username, credentialJSON)
 }
 
-export async function loginBiometric(username: string): Promise<unknown> {
-  const options = await postJSON<LoginBeginResponse>('/webauthn/login/begin', { username })
+export async function loginBiometric(username: string): Promise<VerificationResult> {
+  requireSupport(username)
+  const json = await postJSON<LoginOptionsJSON>('/webauthn/login/begin', { username })
 
-  const publicKeyOptions: PublicKeyCredentialRequestOptions = {
-    ...options,
-    challenge: base64urlToArrayBuffer(options.challenge),
-    allowCredentials: options.allowCredentials?.map((cred) => ({
+  const options: PublicKeyCredentialRequestOptions = {
+    ...json,
+    challenge: base64urlToArrayBuffer(json.challenge),
+    allowCredentials: json.allowCredentials?.map((cred) => ({
       ...cred,
       id: base64urlToArrayBuffer(cred.id),
     })),
   }
 
   const assertion = (await navigator.credentials.get({
-    publicKey: publicKeyOptions,
-  })) as (PublicKeyCredential & { response: AuthenticatorAssertionResponse }) | null
+    publicKey: options,
+  })) as PublicKeyCredential & { response: AuthenticatorAssertionResponse }
 
   if (!assertion) throw new Error('Authentication canceled')
 
@@ -142,5 +151,5 @@ export async function loginBiometric(username: string): Promise<unknown> {
     },
   }
 
-  return postJSON('/webauthn/login/complete', { username, credential: credentialJSON })
+  return complete('/webauthn/login/complete', username, credentialJSON)
 }
