@@ -25,6 +25,7 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:production": "E2E_PRODUCTION=true playwright test e2e/security-headers.spec.ts",
     "test:e2e:chain": "playwright test --config playwright.chain.config.ts",
     "bundle:check": "node scripts/check-bundle-size.js",
     "typecheck:coverage": "node scripts/check-type-coverage.js",
