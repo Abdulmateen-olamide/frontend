@@ -83,23 +83,23 @@ function Series({
 /** Historical portfolio value, return and yield from the indexed performance API. */
 export function PortfolioPerformanceChart({ address }: { address: string }) {
   const [points, setPoints] = useState<PortfolioPerformancePoint[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loadedAddress, setLoadedAddress] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
     void apiFetch<unknown>(`/portfolio/${encodeURIComponent(address)}/performance`)
       .then((result) => {
         if (!cancelled) {
           const rows = Array.isArray(result) ? result.filter(isPoint) : []
           setPoints(rows.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp)))
+          setLoadedAddress(address)
         }
       })
       .catch(() => {
-        if (!cancelled) setPoints([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setPoints([])
+          setLoadedAddress(address)
+        }
       })
     return () => {
       cancelled = true
@@ -107,6 +107,7 @@ export function PortfolioPerformanceChart({ address }: { address: string }) {
   }, [address])
 
   const latest = points[points.length - 1]
+  const loading = loadedAddress !== address
   return (
     <section
       aria-labelledby="portfolio-performance-title"
