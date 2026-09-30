@@ -18,6 +18,7 @@
     "shareLink": "Share your referral link",
     "switchToDark": "Switch to dark",
     "switchToLight": "Switch to light",
+    "preferences": "Preferences",
     "language": "Language",
     "account": "Account",
     "watchlist": "Watchlist",
@@ -56,9 +57,9 @@
   "Landing": {
     "eyebrow": "Green bonds · on Stellar",
     "title": "Own a piece of the energy transition.",
-    "titleAccent": " From one dollar.",
+    "titleAccent": " Invest in verified green projects.",
     "sub": "A transparent pool funding verified green projects. Every figure traces back to chain in two taps — no surprises, ever.",
-    "ctaStart": "Start with one dollar",
+    "ctaStart": "Explore investment options",
     "ctaExplore": "See where the pool works",
     "poolValue": "Pool value",
     "projectsFunded": "Projects funded",
@@ -67,7 +68,7 @@
     "howTitle": "How it works",
     "howSub": "One pool, many projects. You deposit USDC and receive shares in a curated, oracle-scored portfolio.",
     "step1Title": "Deposit USDC",
-    "step1Body": "From one dollar. You always see what you receive before you sign.",
+    "step1Body": "Deposit USDC. The current minimum is shown before you confirm.",
     "step2Title": "Receive shares",
     "step2Body": "Shares — technically SEP-41 tokens called HBS. Your stake in the whole pool.",
     "step3Title": "The pool funds projects",
@@ -145,7 +146,7 @@
     "liquidLine": "Today the pool is <b>29% liquid</b> — you can withdraw your liquid share anytime.",
     "investCta": "Invest {amount} USDC",
     "investCtaEmpty": "Invest",
-    "reasonMin": "Enter an amount of at least 1 USDC",
+    "reasonMin": "Enter an amount of at least {min} USDC",
     "capMessage": "You hold a balance of ${cap}. You can invest up to this amount today.",
     "maxChip": "Max",
     "depositMaxAvailable": "Invest max available",
@@ -191,7 +192,8 @@
     "referralLink": "Your referral link",
     "referralCaption": "Share your link to invite friends. You both get rewards when they invest.",
     "copyLink": "Copy link",
-    "copied": "Copied"
+    "copied": "Copied",
+    "taxReports": "Tax reports"
   },
   "Referral": {
     "title": "Referral program",
@@ -210,7 +212,7 @@
     "withdrawCta": "Withdraw ${amount}",
     "withdrawCtaEmpty": "Withdraw",
     "reasonExceeds": "Amount exceeds what is liquid right now — use Max",
-    "reasonMin": "Enter an amount of at least 1 USDC",
+    "reasonMin": "Enter an amount of at least {min} USDC",
     "cancel": "Cancel",
     "pendingH1": "Processing your withdrawal",
     "pendingSub": "Usually ~5 seconds on Stellar. tx 4d2c…9af1 ↗",
@@ -373,6 +375,9 @@
     "backAriaHidden": "←",
     "backLabel": "Back to projects",
     "verifiedSince": "Verified creator · since {since}",
+    "verifiedMetadata": "Verified metadata",
+    "metadataMismatch": "Metadata mismatch",
+    "unverifiedMetadata": "Unverified metadata",
     "builtBy": "Built by",
     "scoresTitle": "Oracle-verified scores",
     "creditLabel": "Credit quality",
@@ -389,13 +394,36 @@
     "calcSummary": "How is this calculated?",
     "calcFormula": "expected return = investment × (credit + green) ÷ 200 — read it in the contract ↗",
     "investCta": "Invest in the pool that funds this",
-    "investNote": "You invest in the shared pool, which funds this project alongside others — not a per-project checkout."
-  ,
+    "investNote": "You invest in the shared pool, which funds this project alongside others — not a per-project checkout.",
     "pricingTitle": "Bond pricing",
     "priceHistory": "Price history",
     "priceLabel": "Price",
     "yieldHistory": "Yield history",
-    "yieldLabel": "Yield"
+    "yieldLabel": "Yield",
+    "yieldHelpLabel": "About bond yield",
+    "yieldHelp": "This is the bond's current indicated yield. Tap to learn more; it is not a guaranteed return."
+  },
+  "PriceHistory": {
+    "title": "Bond pricing",
+    "caption": "Oracle-verified observations, {range}.",
+    "ariaLabel": "Bond price history",
+    "priceLabel": "Price",
+    "priceUnit": "% of par",
+    "priceAriaLabel": "Price history trend",
+    "yieldLabel": "Yield",
+    "yieldAriaLabel": "Yield history trend",
+    "since": "since {date}"
+  },
+  "TaxReports": {
+    "title": "Quarterly Tax Reports",
+    "exportCsv": "Export CSV",
+    "disclaimer": "This is an illustrative summary for record-keeping, not tax advice. Consult a tax professional for your filing.",
+    "columnQuarter": "Quarter",
+    "columnDeposits": "Deposits",
+    "columnWithdrawals": "Withdrawals",
+    "columnDistributions": "Distributions",
+    "columnRealizedGain": "Realized Gain",
+    "currencyFormat": "${amount}"
   },
   "PasswordResetEmail": {
     "subject": "Reset your Heliobond password",
@@ -447,5 +475,117 @@
     "deletedToastTitle": "Yield alert removed",
     "triggeredToastTitle": "🔔 Yield alert triggered",
     "triggeredToastMessage": "{name} yield is {yield}% — {direction} your {threshold}% threshold."
+  },
+  "ContractErrors": {
+    "vault_AmountNotPositive": "Enter an amount greater than zero.",
+    "vault_DepositExceedsMaximum": "This deposit is above the per-deposit maximum. Try a smaller amount.",
+    "vault_DepositBelowMinimum": "This deposit is below the minimum amount. Try a larger amount.",
+    "vault_WithdrawBelowMinimum": "This withdrawal is below the minimum amount. Try withdrawing more shares.",
+    "vault_SharesNotPositive": "Enter a number of shares greater than zero.",
+    "vault_WithdrawalExceedsLimit": "Try a smaller amount — liquidity is limited right now.",
+    "vault_WithdrawalExceedsLimitUtil": "Try a smaller amount — liquidity is limited right now (utilization {utilization}%).",
+    "vault_InsufficientLiquid": "Not enough liquid funds to pay out right now. Try a smaller amount or join the withdrawal queue.",
+    "vault_InsufficientLiquidUtil": "Not enough liquid funds to pay out right now (utilization {utilization}%). Try a smaller amount or join the withdrawal queue.",
+    "vault_SlippageLimitExceeded": "The price moved more than your slippage tolerance. Refresh the quote or raise the tolerance, then try again.",
+    "vault_Paused": "The vault is paused for maintenance. Please try again later.",
+    "vault_RegistryPaused": "New investments are paused right now. Please try again later.",
+    "vault_DepositLocked": "Your recent deposit is still in its lock period. You can withdraw once it ends.",
+    "vault_MaxSupplyExceeded": "The pool has reached its maximum size, so this deposit can't be accepted. Try a smaller amount or check back later.",
+    "vault_InvestmentCapExceeded": "This project has reached its funding cap. Choose a smaller amount or another project.",
+    "vault_ExceedsMaxTransactionAmount": "This amount is above the per-transaction limit. Split it into smaller transactions.",
+    "vault_TransferToVaultBlocked": "Shares can't be sent to the vault address. Check the recipient and try again.",
+    "vault_FundingRoundActive": "Share transfers are paused while a funding round is active. Try again once it closes.",
+    "vault_ProjectNotFound": "We couldn't find that project. Refresh the page and try again.",
+    "vault_BelowMinCreditQuality": "This project's credit quality is below the pool's minimum, so it can't be funded.",
+    "vault_BelowMinGreenImpact": "This project's green impact is below the pool's minimum, so it can't be funded.",
+    "vault_InsufficientInsurance": "The insurance fund can't cover this claim right now.",
+    "vault_InsuranceAlreadyClaimed": "Insurance has already been claimed for this project.",
+    "vault_InsufficientLiquidYield": "Not enough liquid funds to pay your yield right now. Please try again later.",
+    "vault_ProjectAlreadySettled": "This project has already been settled and is closed to new activity.",
+    "vault_ProjectNotMature": "This project hasn't reached its maturity date yet.",
+    "vault_SelfFundingNotAllowed": "This project can't be funded from the vault admin's own account.",
+    "vault_SelfTransferNotAllowed": "You can't transfer to your own address. Choose a different recipient.",
+    "registry_Paused": "The project registry is paused right now. Please try again later.",
+    "registry_ProjectNotFound": "We couldn't find that project. Refresh the page and try again.",
+    "registry_ProjectArchived": "This project is archived and can't be changed.",
+    "registry_ProjectHasInvestments": "This project has active investments, so it can't be removed.",
+    "registry_ProjectNotMature": "This project hasn't reached its maturity date yet.",
+    "registry_NotWhitelisted": "This address isn't approved to create projects yet.",
+    "registry_UpdateTooFrequent": "This project was updated very recently. Please wait a bit before updating it again.",
+    "category_admin": "This action is restricted to authorized administrators.",
+    "category_unavailable": "This feature isn't available right now. Please try again later.",
+    "category_invalid": "One of the values isn't valid. Check your input and try again.",
+    "category_bridge": "This cross-chain transfer couldn't be completed. Contact support if it keeps happening.",
+    "category_governance": "This vote or proposal can't be processed in its current state.",
+    "unknown": "The contract rejected this transaction. Please try again, and contact support if it keeps happening."
+  },
+  "Telemetry": {
+    "label": "Telemetry",
+    "title": "Help us improve Heliobond",
+    "body": "May we send anonymous error reports and page-performance metrics? We never send wallet addresses, transaction hashes, emails or transaction data.",
+    "learnMore": "What we collect",
+    "accept": "Allow",
+    "decline": "No thanks",
+    "statusOn": "Allowed",
+    "statusOff": "Off",
+    "statusUndecided": "Not set"
+  },
+  "Metadata": {
+    "home": {
+      "title": "Sunlight made financial",
+      "description": "Own a piece of the energy transition through a transparent pool funding verified green projects on Stellar."
+    },
+    "connect": {
+      "title": "Connect your wallet",
+      "description": "Connect a Stellar wallet to Heliobond, or open a demo session to try the investor flow without a browser extension."
+    },
+    "explore": {
+      "title": "Explore green energy bonds",
+      "description": "Browse verified solar, wind and hydro green energy projects. Filter by asset type and read the credit and green scores behind each bond."
+    },
+    "creator": {
+      "title": "Creator space",
+      "description": "Apply to the Heliobond project registry, build a green project listing, and track how the oracle scores it."
+    },
+    "deposit": {
+      "title": "Deposit",
+      "description": "Invest USDC into a verified green energy bond and mint your pool shares."
+    },
+    "learn": {
+      "title": "How Heliobond works",
+      "description": "A plain-language walkthrough of the green-bond pool: where the money goes, how the return is calculated, and who checks the numbers."
+    },
+    "portfolio": {
+      "title": "Your portfolio",
+      "description": "Your Heliobond position, projected return and deposit history."
+    },
+    "taxReports": {
+      "title": "Tax reports",
+      "description": "Download consolidated tax reports for your Heliobond investments."
+    },
+    "risk": {
+      "title": "Risk disclosure",
+      "description": "What can go wrong when you invest in Heliobond green bonds: liquidity, oracle scoring, and the loss scenarios we cannot rule out."
+    },
+    "verify": {
+      "title": "Verify everything",
+      "description": "The Heliobond contracts are public, the oracle cadence is documented, and the return formula is written out in plain sight."
+    },
+    "watchlist": {
+      "title": "Watchlist",
+      "description": "Bonds you have saved to follow, and which of them are open for funding."
+    },
+    "withdraw": {
+      "title": "Withdraw",
+      "description": "Redeem your Heliobond pool shares back into USDC."
+    },
+    "admin": {
+      "title": "Admin console",
+      "description": "Internal Heliobond console: vault stats, the project registry, oracle scoring and the creator whitelist."
+    },
+    "projectNotFound": {
+      "title": "Project not found",
+      "description": "The requested green energy project could not be found."
+    }
   }
 }

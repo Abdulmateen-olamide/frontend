@@ -1,16 +1,18 @@
 'use client'
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Button, useToast } from '../components'
+import { Button, TransactionsDrawer, useToast } from '../components'
 import { useLocaleSwitcher } from '../i18n/LocaleProvider'
-import { LOCALE_LABELS, type Locale } from '../i18n/config'
+import { LOCALE_LABELS, LOCALE_NAMES, type Locale } from '../i18n/config'
 import { useWallet, shortAddress } from '../wallet/WalletProvider'
+import { useTransactions } from '../wallet/TransactionsProvider'
 import { useTheme } from '../theme/ThemeProvider'
-import { HORIZON_URL, NETWORK_PASSPHRASE, networkLabel } from '../config/network'
+import { NETWORK_PASSPHRASE, networkLabel, getExplorerAccountUrl } from '../config/network'
+import { useHorizonHealth } from '../hooks/useHorizonHealth'
 import { networkMismatchMessage } from '../wallet/networkGuard'
 
 /** "Testnet", "Standalone", … — shown as a persistent pill on non-mainnet builds (#611). */
@@ -22,8 +24,8 @@ const Mark = dynamic(() => import('../brand/Mark').then((m) => m.Mark), {
 
 /**
  * TopBar — persistent nav rendered by the root layout. Analemma mark + Explore /
- * How it works / Learn / Creator, network status dot, preferences menu, 
- * Connect (or the connected wallet pill). Active state derives from the
+ * How it works / Learn / Creator, network status dot, preferences menu (theme +
+ * language), Connect (or the connected wallet pill). Active state derives from the
  * route (and a scroll-spy for the landing anchors); connection from the wallet.
  */
 const NAV = [
@@ -42,62 +44,26 @@ export function TopBar() {
     connected,
     address,
     connecting,
+    syncing,
+    restoring,
     isDemo,
     networkMismatch,
     walletNetworkPassphrase,
     checkWalletNetwork,
   } = useWallet()
+  const { pendingCount, transactions } = useTransactions()
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const closeDrawer = useCallback(() => setDrawerOpen(false), [])
 
-  const [networkOnline, setNetworkOnline] = useState(true)
+  const { isOnline: networkOnline } = useHorizonHealth()
 
   useEffect(() => {
     router.prefetch('/connect')
   }, [router])
 
-  useEffect(() => {
-    let cancelled = false
-    let currentController: AbortController | undefined
-
-    const check = async () => {
-      if (!navigator.onLine) {
-        if (!cancelled) setNetworkOnline(false)
-        return
-      }
-      const controller = new AbortController()
-      currentController = controller
-      const timeoutId = setTimeout(() => controller.abort(), 3000)
-      try {
-        const res = await fetch(HORIZON_URL, {
-          signal: controller.signal,
-          cache: 'no-store',
-        })
-        if (!cancelled) setNetworkOnline(res.ok || res.status < 500)
-      } catch {
-        if (!cancelled) setNetworkOnline(false)
-      } finally {
-        clearTimeout(timeoutId)
-      }
-    }
-
-    const handleOnline = () => { void check() }
-    const handleOffline = () => {
-      currentController?.abort()
-      if (!cancelled) setNetworkOnline(false)
-    }
-
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    void check()
-    const interval = setInterval(() => { void check() }, 15000)
-    return () => {
-      cancelled = true
-      clearInterval(interval)
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-      currentController?.abort()
-    }
-  }, [])
-
+  // Theme state starts 'light' on server/first render (to avoid a hydration
+  // mismatch), so the toggle icon can't be trusted until after mount — a
+  // dark-mode user would briefly see the wrong icon. Gate it on `mounted`.
   const [mounted, setMounted] = useState(false)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), [])
@@ -130,180 +96,226 @@ export function TopBar() {
 
   return (
     <>
-    <header
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 200,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 28,
-        padding: '0 32px',
-        height: 68,
-        background: 'color-mix(in srgb, var(--canvas) 86%, transparent)',
-        backdropFilter: 'saturate(140%) blur(12px)',
-        WebkitBackdropFilter: 'saturate(140%) blur(12px)',
-        borderBottom: '1px solid var(--ink-12)',
-      }}
-    >
-      <Link
-        href="/"
-        aria-label="Heliobond — home"
-        style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}
+      <header
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 200,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 28,
+          padding: '0 32px',
+          height: 68,
+          background: 'color-mix(in srgb, var(--canvas) 86%, transparent)',
+          backdropFilter: 'saturate(140%) blur(12px)',
+          WebkitBackdropFilter: 'saturate(140%) blur(12px)',
+          borderBottom: '1px solid var(--ink-12)',
+        }}
       >
-        {mounted && pathname === '/' ? <Mark /> : null}
-        <span
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontWeight: 700,
-            fontSize: 21,
-            letterSpacing: '-0.01em',
-            color: 'var(--ink)',
-          }}
+        <Link
+          href="/"
+          aria-label="Heliobond — home"
+          style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}
         >
-          heliobond
-        </span>
-      </Link>
+          {mounted && pathname === '/' ? <Mark /> : null}
+          <span
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: 21,
+              letterSpacing: '-0.01em',
+              color: 'var(--ink)',
+            }}
+          >
+            heliobond
+          </span>
+        </Link>
 
-      <nav className="hb-topbar-nav" style={{ display: 'flex', gap: 4, marginInlineStart: 8 }}>
-        {NAV.map(({ href, key }) => {
-          const active = href.includes('#')
-            ? pathname === '/' && activeHash === href.slice(href.indexOf('#'))
-            : pathname === href
-          return (
-            <Link
-              key={key}
-              href={href}
-              aria-current={active ? 'page' : undefined}
+        <nav className="hb-topbar-nav" style={{ display: 'flex', gap: 4, marginInlineStart: 8 }}>
+          {NAV.map(({ href, key }) => {
+            const active = href.includes('#')
+              ? pathname === '/' && activeHash === href.slice(href.indexOf('#'))
+              : pathname === href
+            return (
+              <Link
+                key={key}
+                href={href}
+                aria-current={active ? 'page' : undefined}
+                style={{
+                  textDecoration: 'none',
+                  padding: '8px 14px',
+                  borderRadius: 'var(--radius-pill)',
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 14.5,
+                  fontWeight: 500,
+                  color: active ? 'var(--ink)' : 'var(--ink-60)',
+                }}
+              >
+                {t(key)}
+              </Link>
+            )
+          })}
+        </nav>
+
+        <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <NetworkPill passphrase={NETWORK_PASSPHRASE} />
+
+          <span
+            role="status"
+            aria-label={networkOnline ? `Network: ${NETWORK_NAME} online` : 'Offline'}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 7,
+              fontFamily: 'var(--font-data)',
+              fontSize: 12,
+              color: networkOnline ? 'var(--ink-60)' : '#fff',
+              background: networkOnline ? 'transparent' : 'var(--ember)',
+              borderRadius: networkOnline ? 0 : 'var(--radius-pill)',
+              padding: networkOnline ? 0 : '4px 10px',
+            }}
+          >
+            <span
+              aria-hidden="true"
               style={{
-                textDecoration: 'none',
-                padding: '8px 14px',
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: networkOnline ? 'var(--growth)' : '#fff',
+                boxShadow: networkOnline ? '0 0 0 3px var(--growth-12)' : 'none',
+              }}
+            />
+            {networkOnline ? null : 'Offline'}
+          </span>
+
+          <PreferencesDropdown />
+
+          {(connected || transactions.length > 0) && (
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Transaction activity history"
+              title="Transaction activity history"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
                 borderRadius: 'var(--radius-pill)',
-                fontFamily: 'var(--font-body)',
-                fontSize: 14.5,
-                fontWeight: 500,
-                color: active ? 'var(--ink)' : 'var(--ink-60)',
+                border:
+                  pendingCount > 0
+                    ? '1px solid rgba(59, 130, 246, 0.4)'
+                    : '1px solid var(--ink-12)',
+                background: pendingCount > 0 ? 'rgba(59, 130, 246, 0.1)' : 'var(--surface)',
+                color: pendingCount > 0 ? '#3b82f6' : 'var(--ink)',
+                fontFamily: 'var(--font-data)',
+                fontSize: 'var(--type-caption)',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all var(--dur-press) var(--ease-out)',
               }}
             >
-              {t(key)}
-            </Link>
-          )
-        })}
-      </nav>
+              {pendingCount > 0 && (
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: '#3b82f6',
+                    animation: 'hb-pulse 1.4s ease-in-out infinite',
+                  }}
+                />
+              )}
+              {pendingCount > 0 ? `${pendingCount} Pending` : 'Activity'}
+            </button>
+          )}
 
-      <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <NetworkPill passphrase={NETWORK_PASSPHRASE} />
+          {connected && address ? (
+            <WalletMenu
+              address={address}
+              isDemo={isDemo}
+              syncing={syncing || restoring || connecting}
+            />
+          ) : (
+            <Button
+              variant="primary"
+              size="md"
+              loading={(connecting || syncing || restoring) && networkOnline}
+              onClick={() => router.push('/connect')}
+            >
+              {t('connect')}
+            </Button>
+          )}
+        </div>
 
-        <span
-          role="status"
-          aria-label={networkOnline ? `Network: ${NETWORK_NAME} online` : 'Offline'}
+        <TransactionsDrawer open={drawerOpen} onClose={closeDrawer} />
+      </header>
+      {!networkOnline && (
+        <div
+          role="alert"
           style={{
-            display: 'inline-flex',
+            position: 'sticky',
+            top: 68,
+            zIndex: 199,
+            display: 'flex',
             alignItems: 'center',
-            gap: 7,
-            fontFamily: 'var(--font-data)',
-            fontSize: 12,
-            color: networkOnline ? 'var(--ink-60)' : '#fff',
-            background: networkOnline ? 'transparent' : 'var(--ember)',
-            borderRadius: networkOnline ? 0 : 'var(--radius-pill)',
-            padding: networkOnline ? 0 : '4px 10px',
-          }}
-        >
-          <span
-            aria-hidden="true"
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: networkOnline ? 'var(--growth)' : '#fff',
-              boxShadow: networkOnline ? '0 0 0 3px var(--growth-12)' : 'none',
-            }}
-          />
-          {networkOnline ? null : 'Offline'}
-        </span>
-
-        <PreferencesDropdown />
-
-        {connected && address ? (
-          <WalletMenu address={address} isDemo={isDemo} />
-        ) : (
-          <Button
-            variant="primary"
-            size="md"
-            loading={connecting && networkOnline}
-            onClick={() => router.push('/connect')}
-          >
-            {t('connect')}
-          </Button>
-        )}
-      </div>
-    </header>
-    {!networkOnline && (
-      <div
-        role="alert"
-        style={{
-          position: 'sticky',
-          top: 68,
-          zIndex: 199,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 8,
-          padding: '8px 16px',
-          background: 'var(--ember)',
-          color: '#fff',
-          fontFamily: 'var(--font-body)',
-          fontSize: 13,
-          fontWeight: 500,
-        }}
-      >
-        Offline — showing cached data
-      </div>
-    )}
-    {networkMismatch && walletNetworkPassphrase && (
-      <div
-        role="alert"
-        data-testid="network-mismatch"
-        style={{
-          position: 'sticky',
-          top: 68,
-          zIndex: 199,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexWrap: 'wrap',
-          gap: 12,
-          padding: '8px 16px',
-          background: 'var(--ember)',
-          color: '#fff',
-          fontFamily: 'var(--font-body)',
-          fontSize: 13,
-          fontWeight: 500,
-        }}
-      >
-        <span>
-          {networkMismatchMessage(walletNetworkPassphrase, NETWORK_PASSPHRASE)} Signing is
-          blocked until they match.
-        </span>
-        <button
-          type="button"
-          onClick={() => void checkWalletNetwork()}
-          style={{
+            justifyContent: 'center',
+            gap: 8,
+            padding: '8px 16px',
+            background: 'var(--ember)',
+            color: '#fff',
             fontFamily: 'var(--font-body)',
             fontSize: 13,
-            fontWeight: 600,
-            padding: '4px 12px',
-            borderRadius: 'var(--radius-pill)',
-            border: '1px solid #fff',
-            background: 'transparent',
-            color: '#fff',
-            cursor: 'pointer',
+            fontWeight: 500,
           }}
         >
-          Check again
-        </button>
-      </div>
-    )}
+          Offline — showing cached data
+        </div>
+      )}
+      {networkMismatch && walletNetworkPassphrase && (
+        <div
+          role="alert"
+          data-testid="network-mismatch"
+          style={{
+            position: 'sticky',
+            top: 68,
+            zIndex: 199,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            gap: 12,
+            padding: '8px 16px',
+            background: 'var(--ember)',
+            color: '#fff',
+            fontFamily: 'var(--font-body)',
+            fontSize: 13,
+            fontWeight: 500,
+          }}
+        >
+          <span>
+            {networkMismatchMessage(walletNetworkPassphrase, NETWORK_PASSPHRASE)} Signing is blocked
+            until they match.
+          </span>
+          <button
+            type="button"
+            onClick={() => void checkWalletNetwork()}
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: 13,
+              fontWeight: 600,
+              padding: '4px 12px',
+              borderRadius: 'var(--radius-pill)',
+              border: '1px solid #fff',
+              background: 'transparent',
+              color: '#fff',
+              cursor: 'pointer',
+            }}
+          >
+            Check again
+          </button>
+        </div>
+      )}
     </>
   )
 }
@@ -354,14 +366,17 @@ function PreferencesDropdown() {
   const t = useTranslations('Nav')
   const { locale, switchLocale } = useLocaleSwitcher()
   const { theme, toggle } = useTheme()
-
+  // Theme state starts 'light' on server/first render (to avoid a hydration
+  // mismatch), so the theme label can't be trusted until after mount.
   const [mounted, setMounted] = useState(false)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), [])
-
+  const isDarkTheme = mounted && theme === 'dark'
+  const themeToggleLabel = isDarkTheme ? t('switchToLight') : t('switchToDark')
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   useEffect(() => {
     if (!open) return
@@ -372,14 +387,42 @@ function PreferencesDropdown() {
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
 
+  useEffect(() => {
+    if (open) {
+      const timer = setTimeout(() => itemRefs.current[0]?.focus(), 0)
+      return () => clearTimeout(timer)
+    }
+  }, [open])
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
+    const items = itemRefs.current.filter((el): el is HTMLButtonElement => el !== null)
+    if (!items.length) return
+    const focused = document.activeElement
+    const idx = items.indexOf(focused as HTMLButtonElement)
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      items[(idx + 1) % items.length].focus()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      items[(idx - 1 + items.length) % items.length].focus()
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      items[0].focus()
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      items[items.length - 1].focus()
+    } else if (e.key === 'Escape') {
       setOpen(false)
       triggerRef.current?.focus()
+    } else if (e.key === 'Tab') {
+      setOpen(false)
     }
   }
 
-  const isDarkTheme = mounted && theme === 'dark'
+  // Reset item refs array before each render
+  // eslint-disable-next-line react-hooks/refs
+  itemRefs.current = []
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -389,7 +432,8 @@ function PreferencesDropdown() {
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={t('preferences') || 'Preferences'}
+        aria-label={t('preferences')}
+        title={t('preferences')}
         style={iconBtnStyle}
       >
         <SettingsIcon />
@@ -404,87 +448,95 @@ function PreferencesDropdown() {
             position: 'absolute',
             top: 48,
             insetInlineEnd: 0,
-            minWidth: 220,
+            minWidth: 200,
             background: 'var(--surface)',
             border: '1px solid var(--ink-12)',
             borderRadius: 'var(--radius-card)',
             boxShadow: 'var(--shadow-md)',
-            padding: 16,
+            padding: 6,
             zIndex: 400,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 20,
           }}
         >
-          <div>
-            <div style={{ fontFamily: 'var(--font-data)', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', color: 'var(--ink-40)', marginBottom: 8, textTransform: 'uppercase' }}>
-              {t('theme') || 'Theme'}
-            </div>
+          <button
+            ref={(el) => {
+              itemRefs.current.push(el)
+            }}
+            role="menuitemcheckbox"
+            aria-checked={isDarkTheme}
+            tabIndex={-1}
+            type="button"
+            onClick={toggle}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              width: '100%',
+              textAlign: 'start',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '9px 10px',
+              borderRadius: 'var(--radius-input)',
+              fontFamily: 'var(--font-body)',
+              fontSize: 14,
+              fontWeight: 500,
+              color: 'var(--ink-60)',
+              background: 'transparent',
+            }}
+          >
+            {themeToggleLabel}
+            {mounted ? isDarkTheme ? <SunIcon /> : <MoonIcon /> : null}
+          </button>
+          <div
+            role="separator"
+            style={{ height: 1, background: 'var(--ink-12)', margin: '6px 0' }}
+          />
+          <div
+            role="presentation"
+            style={{
+              padding: '4px 10px',
+              fontFamily: 'var(--font-data)',
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: 'var(--ink-40)',
+            }}
+          >
+            {t('language')}
+          </div>
+          {(Object.keys(LOCALE_LABELS) as Locale[]).map((code) => (
             <button
+              key={code}
+              ref={(el) => {
+                itemRefs.current.push(el)
+              }}
+              role="menuitemradio"
+              aria-checked={code === locale}
+              tabIndex={-1}
               type="button"
-              onClick={toggle}
+              onClick={() => {
+                switchLocale(code)
+                setOpen(false)
+              }}
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
+                display: 'block',
                 width: '100%',
-                padding: '10px 12px',
-                borderRadius: 'var(--radius-input)',
-                border: '1px solid var(--ink-12)',
-                background: 'transparent',
+                textAlign: 'start',
+                border: 'none',
                 cursor: 'pointer',
+                padding: '9px 10px',
+                borderRadius: 'var(--radius-input)',
                 fontFamily: 'var(--font-body)',
                 fontSize: 14,
-                fontWeight: 500,
-                color: 'var(--ink)',
+                fontWeight: locale === code ? 600 : 500,
+                color: locale === code ? 'var(--ink)' : 'var(--ink-60)',
+                background: 'transparent',
               }}
             >
-              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {mounted ? isDarkTheme ? <MoonIcon /> : <SunIcon /> : <span style={{ width: 18, height: 18 }} />}
-                {mounted ? isDarkTheme ? (t('dark') || 'Dark') : (t('light') || 'Light') : '...'}
-              </span>
-              <span style={{ fontSize: 11, color: 'var(--ink-60)', background: 'var(--ink-06)', padding: '2px 6px', borderRadius: 4 }}>
-                Toggle
-              </span>
+              <span lang={code}>{LOCALE_NAMES[code]}</span>
             </button>
-          </div>
-
-          <div>
-            <div style={{ fontFamily: 'var(--font-data)', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', color: 'var(--ink-40)', marginBottom: 8, textTransform: 'uppercase' }}>
-              {t('language') || 'Language'}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {(Object.keys(LOCALE_LABELS) as Locale[]).map((code) => (
-                <button
-                  key={code}
-                  role="menuitem"
-                  type="button"
-                  onClick={() => {
-                    switchLocale(code)
-                    setOpen(false)
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: 'var(--radius-input)',
-                    border: 'none',
-                    background: locale === code ? 'var(--ink-06)' : 'transparent',
-                    cursor: 'pointer',
-                    fontFamily: 'var(--font-body)',
-                    fontSize: 14,
-                    fontWeight: locale === code ? 600 : 500,
-                    color: locale === code ? 'var(--ink)' : 'var(--ink-60)',
-                  }}
-                >
-                  {LOCALE_LABELS[code]}
-                  {locale === code && <CheckIcon />}
-                </button>
-              ))}
-            </div>
-          </div>
+          ))}
         </div>
       )}
     </div>
@@ -505,29 +557,10 @@ function SettingsIcon() {
       aria-hidden="true"
     >
       <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
     </svg>
   )
 }
-
-function CheckIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="16"
-      height="16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  )
-}
-
 function MoonIcon() {
   return (
     <svg
@@ -565,7 +598,15 @@ function SunIcon() {
 }
 
 /** The connected wallet pill + its account menu (incl. Disconnect / sign out). */
-function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
+function WalletMenu({
+  address,
+  isDemo,
+  syncing = false,
+}: {
+  address: string
+  isDemo: boolean
+  syncing?: boolean
+}) {
   const t = useTranslations('Nav')
   const { toast } = useToast()
   const router = useRouter()
@@ -578,6 +619,14 @@ function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
 
   const [open, setOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
+
+  // Closing the menu resets the confirm step. Adjusting during render is React's
+  // sanctioned way to reset state for a changed prop (#598).
+  const [wasMenuOpen, setWasMenuOpen] = useState(false)
+  if (wasMenuOpen !== open) {
+    setWasMenuOpen(open)
+    if (!open) setConfirming(false)
+  }
   const [copied, setCopied] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -609,19 +658,18 @@ function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
   }, [open])
 
   useEffect(() => {
-    if (!open) {
-      setConfirming(false)
-      if (cancelTimerRef.current) {
-        clearTimeout(cancelTimerRef.current)
-        cancelTimerRef.current = null
+    if (open) {
+      const onDown = (e: MouseEvent) => {
+        if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
       }
-      return
+      document.addEventListener('mousedown', onDown)
+      return () => document.removeEventListener('mousedown', onDown)
     }
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    // Closing cancels a pending confirm-reset so it cannot fire on a later open.
+    if (cancelTimerRef.current) {
+      clearTimeout(cancelTimerRef.current)
+      cancelTimerRef.current = null
     }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
   }, [open])
 
   const copy = async () => {
@@ -737,7 +785,27 @@ function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
         <span style={{ fontFamily: 'var(--font-data)', fontSize: 13, color: 'var(--ink)' }}>
           {shortAddress(address)}
         </span>
-        <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--solar)' }} />
+        {syncing ? (
+          <span
+            role="status"
+            aria-label="Syncing with Stellar"
+            title="Syncing with Stellar…"
+            style={{
+              width: 16,
+              height: 16,
+              border: '2px solid var(--ink-20, rgba(0,0,0,0.2))',
+              borderTopColor: 'var(--solar)',
+              borderRadius: '50%',
+              animation: 'hb-spin 0.8s linear infinite',
+              display: 'inline-block',
+              marginInline: 6,
+            }}
+          />
+        ) : (
+          <span
+            style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--solar)' }}
+          />
+        )}
       </button>
 
       {open && (
@@ -806,7 +874,7 @@ function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
               ref={(el) => {
                 itemRefs.current.push(el)
               }}
-              href={`https://stellar.expert/explorer/testnet/account/${address}`}
+              href={getExplorerAccountUrl(address)}
             >
               {t('viewOnExplorer')}
             </MenuLink>

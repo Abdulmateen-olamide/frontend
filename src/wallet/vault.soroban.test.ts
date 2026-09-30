@@ -35,6 +35,7 @@ vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
   }
   class HorizonServer {
     loadAccount = rpcMock.loadAccount
+    fetchBaseFee = vi.fn().mockResolvedValue(100)
   }
   return {
     ...actual,
@@ -73,8 +74,9 @@ function invocation(tx: Transaction) {
   }
 }
 
-function simulatedTx(n = 0): Transaction {
-  return rpcMock.simulateTransaction.mock.calls[n][0] as Transaction
+function simulatedTx(n?: number): Transaction {
+  const calls = rpcMock.simulateTransaction.mock.calls
+  return calls[n ?? calls.length - 1][0] as Transaction
 }
 
 function okSimulation(retval: xdr.ScVal = xdr.ScVal.scvVoid()) {
@@ -87,7 +89,19 @@ async function settle<T>(run: Promise<T>): Promise<T> {
     (v) => ({ ok: true as const, v }),
     (e: unknown) => ({ ok: false as const, e }),
   )
-  for (let i = 0; i < 20; i++) await vi.advanceTimersByTimeAsync(2000)
+  // Drain the submission polling loop, including the timers it schedules while
+  // running. A fixed advance budget could run out on a loaded CI runner and
+  // leave the promise pending, hanging the test instead of failing it (#596).
+  // Keep draining until the promise settles: withdraw awaits a dynamic import
+  // and RPC reads before it schedules its first timer.
+  let settled = false
+  void guarded.then(() => {
+    settled = true
+  })
+  for (let i = 0; i < 100 && !settled; i++) {
+    await vi.dynamicImportSettled()
+    await vi.runAllTimersAsync()
+  }
   const res = await guarded
   if (!res.ok) throw res.e
   return res.v
@@ -96,9 +110,45 @@ async function settle<T>(run: Promise<T>): Promise<T> {
 const sign = vi.fn(async (txXdr: string) => txXdr)
 
 beforeEach(() => {
+  const storage = new Map<string, string>()
+  vi.stubGlobal('sessionStorage', {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+    removeItem: (key: string) => storage.delete(key),
+    clear: () => storage.clear(),
+  })
   vi.useFakeTimers()
-  rpcMock.simulateTransaction.mockReset().mockResolvedValue(okSimulation())
-  rpcMock.sendTransaction.mockReset().mockResolvedValue({ status: 'PENDING', hash: 'abc123' })
+  rpcMock.simulateTransaction.mockReset().mockImplementation((tx: Transaction) => {
+    const op = tx?.operations?.[0]
+    if (op && 'func' in op) {
+      const call = op.func.invokeContract()
+      const method = call.functionName().toString()
+      if (method === 'convert_to_assets')
+        return Promise.resolve(okSimulation(nativeToScVal(10_058_000n, { type: 'i128' })))
+      if (method === 'get_portfolio') {
+        const i128 = (v: bigint) => nativeToScVal(v, { type: 'i128' })
+        return Promise.resolve(
+          okSimulation(
+            xdr.ScVal.scvMap([
+              new xdr.ScMapEntry({
+                key: xdr.ScVal.scvSymbol('shares'),
+                val: i128(100000_000_000n),
+              }),
+              new xdr.ScMapEntry({
+                key: xdr.ScVal.scvSymbol('usdc_value'),
+                val: i128(100000_000_000n),
+              }),
+            ]),
+          ),
+        )
+      }
+    }
+    return Promise.resolve(okSimulation())
+  })
+  rpcMock.sendTransaction.mockReset().mockImplementation(async (tx: Transaction) => ({
+    status: 'PENDING',
+    hash: tx.hash().toString('hex'),
+  }))
   rpcMock.getTransaction.mockReset().mockResolvedValue({ status: 'SUCCESS' })
   rpcMock.loadAccount.mockReset().mockImplementation(async (id: string) => new Account(id, '41'))
   rpcMock.serverOptions.length = 0
@@ -108,14 +158,84 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
 })
 
+// Each test re-imports the Stellar SDK after vi.resetModules(), which can exceed
+// the 5s default on a loaded coverage runner.
+vi.setConfig({ testTimeout: 30_000 })
+
 describe('signed transactions', () => {
+  it.each(['deposit', 'withdraw', 'claim', 'claim_yield'] as const)(
+    'persists %s before sending and tracks confirmation',
+    async (kind) => {
+      const vault = await loadVault()
+      const store = await import('./transactions')
+      rpcMock.sendTransaction.mockImplementation(async (tx: Transaction) => {
+        const saved = JSON.parse(sessionStorage.getItem('hb-pending-transactions')!)
+        expect(saved[0]).toMatchObject({ hash: tx.hash().toString('hex'), kind, status: 'pending' })
+        return { status: 'PENDING', hash: tx.hash().toString('hex') }
+      })
+      const action =
+        kind === 'deposit'
+          ? vault.submitDeposit(100, USER, sign)
+          : kind === 'withdraw'
+            ? vault.submitWithdraw(100, USER, sign)
+            : kind === 'claim'
+              ? vault.submitClaim(USER, sign)
+              : vault.submitClaimYield(USER, sign)
+      await settle<unknown>(action)
+      expect(store.getTransactions()[0]).toMatchObject({
+        kind,
+        status: 'confirmed',
+        fee: 0.00001,
+        inclusionFee: 0.00001,
+        resourceFee: 0,
+      })
+      expect(JSON.parse(sessionStorage.getItem('hb-pending-transactions')!)).toEqual([])
+    },
+  )
+
+  it('preserves a known hash when submission loses its response', async () => {
+    const vault = await loadVault()
+    const store = await import('./transactions')
+    rpcMock.sendTransaction.mockRejectedValue(new Error('connection lost'))
+    await expect(settle(vault.submitDeposit(100, USER, sign))).rejects.toBeInstanceOf(
+      store.TransactionPendingError,
+    )
+    expect(JSON.parse(sessionStorage.getItem('hb-pending-transactions')!)[0]).toMatchObject({
+      status: 'timeout_pending',
+      hash: simulatedTx().hash().toString('hex'),
+    })
+  })
+
+  it('does not record or report pending when signing fails before submission', async () => {
+    const vault = await loadVault()
+    const store = await import('./transactions')
+    await expect(
+      settle(
+        vault.submitDeposit(100, USER, async () => {
+          throw new Error('Signing timed out')
+        }),
+      ),
+    ).rejects.toThrow('Signing timed out')
+    expect(store.getTransactions()).toEqual([])
+    expect(rpcMock.sendTransaction).not.toHaveBeenCalled()
+  })
+
+  it('returns an XLM estimate and reports simulation failure as unavailable', async () => {
+    const vault = await loadVault()
+    expect(await vault.estimateTransactionFee('deposit', 100, USER)).toBe(0.00001)
+    rpcMock.simulateTransaction.mockResolvedValue({ error: 'simulation unavailable' })
+    expect(await vault.estimateTransactionFee('withdraw', 100, USER)).toBeNull()
+    expect(sign).not.toHaveBeenCalled()
+  })
+
   it('deposit(usdc_amount: i128, min_shares: i128)', async () => {
     const vault = await loadVault()
     const hash = await settle(vault.submitDeposit(125.5, USER, sign))
 
-    expect(hash).toBe('abc123')
+    expect(hash).toBe(simulatedTx().hash().toString('hex'))
     const call = invocation(simulatedTx())
     expect(call).toEqual({
       contract: CONTRACT_ID,
@@ -129,15 +249,61 @@ describe('signed transactions', () => {
     expect(sent.networkPassphrase).toBe(TESTNET)
     expect(sent.source).toBe(USER)
     expect(invocation(sent).method).toBe('deposit')
-    expect(rpcMock.getTransaction).toHaveBeenCalledWith('abc123')
+    expect(rpcMock.getTransaction).toHaveBeenCalledWith(simulatedTx().hash().toString('hex'))
   })
 
-  it('withdraw(shares_amount: i128, min_usdc_return: i128)', async () => {
+  it('withdraw(shares_amount: i128, min_usdc_return: i128) fetches live price and clamps', async () => {
     const vault = await loadVault()
+    rpcMock.simulateTransaction.mockImplementation((tx: Transaction) => {
+      // Only invoke-contract operations reach this path.
+      const op = tx.operations.find((candidate) => 'func' in candidate)
+      if (!op || !('func' in op)) throw new Error('expected an invoke-contract operation')
+      const call = op.func.invokeContract()
+      const method = call.functionName().toString()
+      if (method === 'convert_to_assets')
+        return Promise.resolve(okSimulation(nativeToScVal(10_500_000n, { type: 'i128' }))) // 1.05 price
+      if (method === 'get_portfolio') {
+        const i128 = (v: bigint) => nativeToScVal(v, { type: 'i128' })
+        return Promise.resolve(
+          okSimulation(
+            xdr.ScVal.scvMap([
+              new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('shares'), val: i128(150_000_000n) }), // 15 shares max
+              new xdr.ScMapEntry({
+                key: xdr.ScVal.scvSymbol('usdc_value'),
+                val: i128(157_500_000n),
+              }),
+            ]),
+          ),
+        )
+      }
+      return Promise.resolve(okSimulation())
+    })
+
+    await settle(vault.submitWithdraw(200, USER, sign))
+
+    // 200 USDC @ 1.05 = 190.47 shares. Clamps to 15 shares.
+    // Adjusted amount = 15 * 1.05 = 15.75 USDC.
+    // Min return = 15.75 * 0.995 = 15.67125 USDC.
+    const call = invocation(simulatedTx(2))
+    expect(call).toEqual({
+      contract: CONTRACT_ID,
+      method: 'withdraw',
+      argTypes: ['scvI128', 'scvI128'],
+      args: [150_000_000n, BigInt(Math.floor(15.75 * 0.995 * 1e7))],
+    })
+  })
+
+  it('withdraw(shares_amount: i128, min_usdc_return: i128) reports the returned USDC amount', async () => {
+    const vault = await loadVault()
+    rpcMock.getTransaction.mockResolvedValue({
+      status: 'SUCCESS',
+      returnValue: nativeToScVal(1_975_000_000n, { type: 'i128' }),
+    })
     const result = await settle(vault.submitWithdraw(200, USER, sign))
 
-    expect(result.hash).toBe('abc123')
+    expect(result.hash).toBe(simulatedTx().hash().toString('hex'))
     expect(result.queued).toBe(false)
+    expect(result.estimatedAmount).toBe(197.5)
     expect(invocation(simulatedTx())).toEqual({
       contract: CONTRACT_ID,
       method: 'withdraw',
@@ -147,18 +313,20 @@ describe('signed transactions', () => {
         BigInt(Math.floor(200 * 0.995 * 1e7)),
       ],
     })
-  })
+  }, 10000)
 
   it('claim() takes no arguments', async () => {
     const vault = await loadVault()
-    await expect(settle(vault.submitClaim(USER, sign))).resolves.toBe('abc123')
+    const hash = await settle(vault.submitClaim(USER, sign))
+    expect(hash).toBe(simulatedTx().hash().toString('hex'))
     expect(invocation(simulatedTx())).toMatchObject({ method: 'claim', argTypes: [], args: [] })
     expect(rpcMock.simulateTransaction).toHaveBeenCalledTimes(1)
   })
 
   it('claim_yield(from: Address)', async () => {
     const vault = await loadVault()
-    await expect(settle(vault.submitClaimYield(USER, sign))).resolves.toBe('abc123')
+    const hash = await settle(vault.submitClaimYield(USER, sign))
+    expect(hash).toBe(simulatedTx().hash().toString('hex'))
     expect(invocation(simulatedTx())).toMatchObject({
       method: 'claim_yield',
       argTypes: ['scvAddress'],
@@ -173,7 +341,7 @@ describe('signed transactions', () => {
     expect(vault.toStroops(1)).toBe(10_000_000n)
   })
 
-  it('detects a queued withdrawal from the WithdrawQueued event', async () => {
+  it('detects a queued withdrawal from the return value and withdraw_queued event', async () => {
     const vault = await loadVault()
     const event = new xdr.ContractEvent({
       ext: new xdr.ExtensionPoint(0),
@@ -182,25 +350,40 @@ describe('signed transactions', () => {
       body: new xdr.ContractEventBody(
         0,
         new xdr.ContractEventV0({
-          topics: [nativeToScVal('WithdrawQueued', { type: 'symbol' })],
-          data: nativeToScVal({ position: 3, amount: 5_000_000_000n }),
+          topics: [nativeToScVal('withdraw_queued', { type: 'symbol' })],
+          data: nativeToScVal({ shares_burned: 10_000_000n, usdc_owed: 5_000_000_000n }),
         }),
       ),
     })
     rpcMock.getTransaction.mockResolvedValue({
       status: 'SUCCESS',
-      events: { contractEventsXdr: [[event]] },
+      returnValue: nativeToScVal(0n, { type: 'i128' }),
+      events: { contractEventsXdr: [event.toXDR('base64')] },
     })
 
     const result = await settle(vault.submitWithdraw(500, USER, sign))
     expect(result).toMatchObject({
-      hash: 'abc123',
+      hash: simulatedTx().hash().toString('hex'),
       queued: true,
-      position: 3,
       estimatedAmount: 500,
     })
-    expect(String(result)).toBe('abc123')
-  })
+    expect(result).not.toHaveProperty('position')
+    expect(String(result)).toBe(simulatedTx().hash().toString('hex'))
+  }, 10000)
+
+  it('detects a queued withdrawal when the RPC response omits events', async () => {
+    const vault = await loadVault()
+    rpcMock.getTransaction.mockResolvedValue({
+      status: 'SUCCESS',
+      returnValue: nativeToScVal(0n, { type: 'i128' }),
+    })
+
+    const result = await settle(vault.submitWithdraw(500, USER, sign))
+
+    expect(result.queued).toBe(true)
+    expect(result.estimatedAmount).toBeUndefined()
+    expect(result).not.toHaveProperty('position')
+  }, 10000)
 
   it('does not ask the wallet to sign when simulation fails', async () => {
     const vault = await loadVault()
@@ -224,11 +407,45 @@ describe('signed transactions', () => {
     )
   })
 
+  it('retries TRY_AGAIN_LATER with backoff', async () => {
+    const vault = await loadVault()
+    rpcMock.sendTransaction
+      .mockResolvedValueOnce({ status: 'TRY_AGAIN_LATER' })
+      .mockResolvedValueOnce({ status: 'TRY_AGAIN_LATER' })
+      .mockImplementation(async (tx: Transaction) => ({
+        status: 'PENDING',
+        hash: tx.hash().toString('hex'),
+      }))
+
+    await settle(vault.submitWithdraw(100, USER, sign))
+    expect(rpcMock.sendTransaction).toHaveBeenCalledTimes(3)
+  })
+
+  it('fails after max TRY_AGAIN_LATER retries', async () => {
+    const vault = await loadVault()
+    rpcMock.sendTransaction.mockResolvedValue({ status: 'TRY_AGAIN_LATER' })
+    await expect(settle(vault.submitWithdraw(100, USER, sign))).rejects.toThrow(
+      'Send failed: TRY_AGAIN_LATER',
+    )
+  })
+
   it('surfaces an on-chain failure', async () => {
     const vault = await loadVault()
     rpcMock.getTransaction.mockResolvedValue({ status: 'FAILED' })
     await expect(settle(vault.submitClaim(USER, sign))).rejects.toThrow(
       'Transaction failed on-chain',
+    )
+  })
+
+  it('surfaces an on-chain contract failure with error code', async () => {
+    const vault = await loadVault()
+    const errorVal = xdr.ScVal.scvError(xdr.ScError.sceContract(33))
+    rpcMock.getTransaction.mockResolvedValue({
+      status: 'FAILED',
+      resultXdr: errorVal,
+    })
+    await expect(settle(vault.submitClaim(USER, sign))).rejects.toThrow(
+      'Transaction failed on-chain: Error(Contract, #33)',
     )
   })
 
@@ -246,11 +463,11 @@ describe('signed transactions', () => {
     const vault = await loadVault()
     rpcMock.getTransaction.mockResolvedValue({ status: 'NOT_FOUND' })
     await expect(settle(vault.submitDeposit(100, USER, sign))).rejects.toThrow(
-      'Transaction confirmation timed out',
+      "Still pending — we'll keep checking",
     )
   })
 
-  it('goes offline when Horizon does not answer, and refuses further submissions', async () => {
+  it('goes offline when Horizon does not answer, but still attempts later submissions (#624)', async () => {
     const vault = await loadVault()
     const listener = vi.fn()
     const unsubscribe = vault.onOfflineChange(listener)
@@ -261,7 +478,11 @@ describe('signed transactions', () => {
     )
     expect(vault.isOffline()).toBe(true)
     expect(listener).toHaveBeenCalledWith(true)
-    await expect(vault.submitWithdraw(100, USER, sign)).rejects.toThrow('Stellar node is offline')
+    // The next submission is NOT refused just because an earlier call timed out:
+    // it re-attempts and fails on the network, not on an offline latch.
+    await expect(settle(vault.submitWithdraw(100, USER, sign))).rejects.toThrow(
+      'Stellar Horizon timed out loading account',
+    )
     unsubscribe()
   })
 
@@ -291,7 +512,6 @@ describe('demo mode (no contract configured)', () => {
     })
     await expect(settle(vault.submitWithdraw(500, USER, sign))).resolves.toMatchObject({
       queued: true,
-      position: 1,
     })
   })
 
@@ -392,7 +612,7 @@ describe('view calls', () => {
     })
   })
 
-  it('falls back to the cached values when the RPC errors', async () => {
+  it('a simulate error does not mark offline, and reads retry instead of short-circuiting (#624)', async () => {
     const vault = await loadVault()
     rpcMock.simulateTransaction.mockResolvedValue(
       okSimulation(nativeToScVal(20_000_000n, { type: 'i128' })),
@@ -400,14 +620,34 @@ describe('view calls', () => {
     await expect(vault.fetchSharePrice(USER)).resolves.toBe('2.0000000')
     await expect(vault.fetchTotalAssets(USER)).resolves.toBe(2)
 
+    // A chain-level simulate error is not a connectivity failure.
     rpcMock.simulateTransaction.mockResolvedValue({ error: 'boom' })
-    await expect(vault.fetchSharePrice(USER)).resolves.toBe('2.0000000')
-    expect(vault.isOffline()).toBe(true)
-    // Once offline, reads short-circuit to the cache without calling the RPC.
+    await expect(vault.fetchSharePrice(USER)).rejects.toThrow('Soroban simulate error: boom')
+    expect(vault.isOffline()).toBe(false)
+
+    // Reads keep hitting the network (no offline short-circuit); each rethrows.
     const calls = rpcMock.simulateTransaction.mock.calls.length
-    await expect(vault.fetchTotalAssets(USER)).resolves.toBe(2)
-    await expect(vault.fetchUtilizationBps(USER)).resolves.toBe(0)
-    expect(rpcMock.simulateTransaction).toHaveBeenCalledTimes(calls)
+    await expect(vault.fetchTotalAssets(USER)).rejects.toThrow('Soroban simulate error: boom')
+    await expect(vault.fetchUtilizationBps(USER)).rejects.toThrow('Soroban simulate error: boom')
+    expect(rpcMock.simulateTransaction.mock.calls.length).toBeGreaterThan(calls)
+  })
+
+  it('recovers without a reload after a timeout once the RPC answers again (#624)', async () => {
+    const vault = await loadVault()
+    // First read hangs → withTimeout marks the app offline.
+    rpcMock.simulateTransaction.mockReturnValueOnce(new Promise(() => {}))
+    await expect(settle(vault.fetchTotalAssets(USER))).rejects.toThrow(
+      'Stellar RPC timed out during simulation',
+    )
+    expect(vault.isOffline()).toBe(true)
+
+    // The next read is NOT short-circuited: it hits the now-healthy RPC and succeeds,
+    // clearing the offline flag — no page reload required.
+    rpcMock.simulateTransaction.mockResolvedValue(
+      okSimulation(nativeToScVal(4_820_000_000_000n, { type: 'i128' })),
+    )
+    await expect(vault.fetchTotalAssets(USER)).resolves.toBe(482_000)
+    expect(vault.isOffline()).toBe(false)
   })
 
   it('reports a simulation without a result as unavailable', async () => {
@@ -415,6 +655,51 @@ describe('view calls', () => {
     rpcMock.simulateTransaction.mockResolvedValue({ latestLedger: 1 })
     await expect(vault.fetchPortfolio(USER)).rejects.toThrow('Soroban simulate returned no result')
     rpcMock.simulateTransaction.mockResolvedValue({ error: 'nope' })
-    await expect(vault.fetchUtilizationBps(USER)).resolves.toBe(0)
+    await expect(vault.fetchUtilizationBps(USER)).rejects.toThrow('Soroban simulate error: nope')
+  })
+
+  describe('fetchVaultLimits', () => {
+    it('fetches and scales vault limits from the contract', async () => {
+      const vault = await loadVault()
+      rpcMock.simulateTransaction.mockImplementation((tx: Transaction) => {
+        // Only invoke-contract operations reach `fetchVaultLimits`.
+        const op = tx.operations.find((candidate) => 'func' in candidate)
+        if (!op || !('func' in op)) throw new Error('expected an invoke-contract operation')
+        const call = op.func.invokeContract()
+        const method = call.functionName().toString()
+        if (method === 'is_paused') return Promise.resolve(okSimulation(xdr.ScVal.scvBool(true)))
+        if (method === 'get_deposit_lock_expiry')
+          return Promise.resolve(okSimulation(nativeToScVal(1234567890n, { type: 'u64' })))
+        if (method === 'max_transaction_amount')
+          return Promise.resolve(okSimulation(nativeToScVal(1000_0000000n, { type: 'i128' })))
+        if (method === 'get_utilization_bps')
+          return Promise.resolve(okSimulation(nativeToScVal(500n, { type: 'u32' })))
+        return Promise.resolve(okSimulation())
+      })
+
+      const limits = await vault.fetchVaultLimits(USER)
+      expect(limits.paused).toBe(true)
+      expect(limits.lockExpiresAt).toBe(1234567890)
+      expect(limits.maxTx).toBe(1000)
+      expect(limits.utilizationBps).toBe(500)
+      expect(limits.minDeposit).toBe(100)
+      expect(limits.minWithdrawShares).toBe(100)
+    })
+
+    it('falls back to defaults if offline or contract missing', async () => {
+      const vault = await loadVault(null)
+      const limits = await vault.fetchVaultLimits(USER)
+      expect(limits.paused).toBe(false)
+      expect(limits.maxTx).toBe(482)
+      expect(limits.minDeposit).toBe(100)
+    })
+
+    it('falls back to defaults if RPC errors', async () => {
+      const vault = await loadVault()
+      rpcMock.simulateTransaction.mockRejectedValue(new Error('RPC error'))
+      const limits = await vault.fetchVaultLimits(USER)
+      expect(limits.paused).toBe(false)
+      expect(limits.maxTx).toBe(482)
+    })
   })
 })

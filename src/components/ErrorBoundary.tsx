@@ -1,5 +1,6 @@
 'use client'
-import React from 'react' 
+import React from 'react'
+import { reportError } from '../lib/errorReporting'
 
 interface Props {
   children: React.ReactNode
@@ -18,13 +19,13 @@ export class ErrorBoundary extends React.Component<Props, State> {
     this.state = { hasError: false, error: null, isOffline: false }
   }
 
-  // eslint-disable-next-line @typescript/eslint/no-unused-vars
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error, isOffline: false }
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('ErrorBoundary caught an error:', error, errorInfo)
+    reportError(error, { kind: 'render' })
   }
 
   componentDidMount() {

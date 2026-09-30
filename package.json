@@ -11,8 +11,9 @@
     "url": "git+https://github.com/Heliobond/frontend.git"
   },
   "engines": {
-    "node": ">=18.18.0"
+    "node": ">=22.0.0"
   },
+  "packageManager": "bun@1.2.4",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
@@ -25,9 +26,10 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:production": "E2E_PRODUCTION=true playwright test e2e/security-headers.spec.ts",
     "test:e2e:chain": "playwright test --config playwright.chain.config.ts",
     "bundle:check": "node scripts/check-bundle-size.js",
-    "typecheck:coverage": "node scripts/check-type-coverage.js",
+    "typecheck:coverage": "node scripts/check-type-coverage.mjs",
     "prepare": "husky"
   },
   "dependencies": {
@@ -37,6 +39,7 @@
     "@stellar/stellar-sdk": "^16.3.0",
     "next": "^16.3.4",
     "next-intl": "^4.14.2",
+    "prop-types": "^15.8.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "three": "^0.185.1"
@@ -44,10 +47,12 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",
     "@playwright/test": "^1.61.1",
+    "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.5.1",
     "@types/node": "^25.9.3",
+    "@types/prop-types": "^15.7.15",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@types/three": "^0.184.1",
@@ -58,8 +63,10 @@
     "eslint-config-next": "^16.2.9",
     "husky": "^9.1.7",
     "jsdom": "^24.0.0",
+    "lint-staged": "^17.6.0",
     "prettier": "^3.9.1",
     "typescript": "^6.0.3",
+    "vite": "^6.4.3",
     "vitest": "^4.1.9"
   }
 }

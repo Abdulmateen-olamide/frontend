@@ -1,3 +1,4 @@
+import { recordTransaction, updateTransaction, TransactionPendingError } from './transactions'
 // InvestmentVault client — synchronous simulation + async on-chain reads.
 //
 // The sync `vault` object mirrors the Soroban vault's surface so deposit &
@@ -20,6 +21,7 @@
 // back gracefully — no errors surface to the user.
 
 import { selectSharePrice } from '../state/selectors'
+import { reportError } from '../lib/errorReporting'
 import {
   STELLAR_NETWORK,
   SOROBAN_RPC_URL as RPC_URL,
@@ -29,6 +31,8 @@ import {
   passphraseForNetwork,
 } from '../config/network'
 import type { xdr as XdrTypes } from '@stellar/stellar-sdk'
+import { notifyTransactionConfirmed } from './vaultEvents'
+import { MIN_DEPOSIT_USDC, MIN_WITHDRAW_SHARES } from '../config/vault'
 
 /** USDC and HBS shares are i128 values with 7 decimals on-chain. */
 const SCALE = 1e7
@@ -47,7 +51,6 @@ export interface WithdrawPreview {
 export interface WithdrawResult {
   hash: string
   queued: boolean
-  position?: number
   estimatedAmount?: number
   toString(): string
 }
@@ -55,14 +58,12 @@ export interface WithdrawResult {
 export function createWithdrawResult(
   hash: string,
   queued: boolean,
-  position?: number,
   estimatedAmount?: number,
 ): WithdrawResult {
   return {
     hash,
     queued,
-    position,
-    estimatedAmount,
+    ...(estimatedAmount === undefined ? {} : { estimatedAmount }),
     toString() {
       return this.hash
     },
@@ -152,6 +153,26 @@ export function onOfflineChange(listener: (offline: boolean) => void): () => voi
   }
 }
 
+/**
+ * True only for a transport-level failure: a timeout or a fetch/network error.
+ * That is the *whole* meaning of "offline" — a Soroban simulate result (e.g. a
+ * contract panic), a malformed request, or a bad address is not a connectivity
+ * problem and must never flip the global offline flag (issue #624).
+ */
+function isTransportError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error)
+  return (
+    msg.includes('timed out') ||
+    msg.includes('timeout') ||
+    msg.includes('Failed to fetch') ||
+    msg.includes('NetworkError') ||
+    msg.includes('fetch failed') ||
+    msg.includes('ECONNREFUSED') ||
+    msg.includes('ETIMEDOUT') ||
+    msg.includes('ENOTFOUND')
+  )
+}
+
 /** Reject if a Stellar network call takes longer than RPC_TIMEOUT_MS. */
 async function withTimeout<T>(promise: Promise<T>, message: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -159,6 +180,7 @@ async function withTimeout<T>(promise: Promise<T>, message: string): Promise<T> 
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         setOffline(true)
+        reportError(new Error(message), { kind: 'rpc-timeout' })
         reject(new Error(message))
       }, RPC_TIMEOUT_MS)
     })
@@ -171,13 +193,19 @@ async function withTimeout<T>(promise: Promise<T>, message: string): Promise<T> 
 }
 
 /** Call a Soroban view function (no state mutation) and return the raw ScVal. */
+// One shared import so parallel simulations (fetchVaultLimits) all resolve the same SDK module.
+let sdkImport: Promise<typeof import('@stellar/stellar-sdk')> | undefined
+function loadSdk() {
+  return (sdkImport ??= import('@stellar/stellar-sdk'))
+}
+
 async function sorobanSimulate(
   sourceAddress: string,
   method: string,
   args: XdrTypes.ScVal[] = [],
   network: string = STELLAR_NETWORK,
 ): Promise<XdrTypes.ScVal> {
-  const { rpc, Contract, TransactionBuilder, Account } = await import('@stellar/stellar-sdk')
+  const { rpc, Contract, TransactionBuilder, Account } = await loadSdk()
 
   const server = new rpc.Server(RPC_URL, { allowHttp: allowHttpFor(RPC_URL) })
   const contract = new Contract(CONTRACT_ID!)
@@ -190,27 +218,15 @@ async function sorobanSimulate(
     .setTimeout(0)
     .build()
 
-  const result = await withTimeout(
+  const result = (await withTimeout(
     server.simulateTransaction(tx),
     'Stellar RPC timed out during simulation',
-  ) as { error?: string; result?: { retval: unknown } }
+  )) as { error?: string; result?: { retval: unknown } }
   if ('error' in result) {
-    const error = result.error
-    // Distinguish programming errors (bad address, bad args) from network errors
-    // Invalid address/contract errors should NOT mark the app as offline
-    const isProgrammingError =
-      typeof error === 'string' &&
-      (error.includes('Invalid address') ||
-        error.includes('invalid address') ||
-        error.includes('Malformed') ||
-        error.includes('malformed') ||
-        error.includes('Contract not found') ||
-        error.includes('contract not found') ||
-        error.includes('not a valid'))
-    if (isProgrammingError) {
-      throw new Error(`Soroban simulate error: ${error}`)
-    }
-    throw new Error(`Soroban simulate error: ${error}`)
+    // A simulate error is a chain-level outcome (a contract panic, a malformed
+    // request, ...), never a connectivity failure — surface it without letting
+    // callers flip the offline flag (issue #624).
+    throw new Error(`Soroban simulate error: ${result.error}`)
   }
   if (!result.result) throw new Error('Soroban simulate returned no result')
   return result.result.retval as XdrTypes.ScVal
@@ -227,7 +243,6 @@ export async function fetchSharePrice(
   network = STELLAR_NETWORK,
 ): Promise<string> {
   if (!CONTRACT_ID) throw new Error('NEXT_PUBLIC_VAULT_CONTRACT_ID not set')
-  if (offline) return formatSharePrice(cachedSharePrice)
   const { scValToNative, nativeToScVal } = await import('@stellar/stellar-sdk')
   try {
     const oneShare = nativeToScVal(toStroops(1), { type: 'i128' })
@@ -236,20 +251,10 @@ export async function fetchSharePrice(
     cachedSharePrice = assetsPerShare > 0 ? assetsPerShare : 1
     return formatSharePrice(cachedSharePrice)
   } catch (e) {
-    // Don't mark offline for programming errors (invalid address, bad contract, etc.)
-    const msg = e instanceof Error ? e.message : String(e)
-    const isProgrammingError =
-      msg.includes('Invalid address') ||
-      msg.includes('invalid address') ||
-      msg.includes('Malformed') ||
-      msg.includes('malformed') ||
-      msg.includes('Contract not found') ||
-      msg.includes('contract not found') ||
-      msg.includes('not a valid')
-    if (!isProgrammingError) {
-      setOffline(true)
-    }
-    return formatSharePrice(cachedSharePrice)
+    // Only a transport failure means "offline"; rethrow otherwise/successively so
+    // callers keep `fetchedAt` at the last real success (issue #624).
+    if (isTransportError(e)) setOffline(true)
+    throw e instanceof Error ? e : new Error(String(e))
   }
 }
 
@@ -262,26 +267,14 @@ export async function fetchTotalAssets(
   network = STELLAR_NETWORK,
 ): Promise<number> {
   if (!CONTRACT_ID) throw new Error('NEXT_PUBLIC_VAULT_CONTRACT_ID not set')
-  if (offline) return cachedTotalAssets ?? 0
   const { scValToNative } = await import('@stellar/stellar-sdk')
   try {
     const retval = await sorobanSimulate(sourceAddress, 'total_assets', [], network)
     cachedTotalAssets = Number(scValToNative(retval)) / SCALE
     return cachedTotalAssets
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    const isProgrammingError =
-      msg.includes('Invalid address') ||
-      msg.includes('invalid address') ||
-      msg.includes('Malformed') ||
-      msg.includes('malformed') ||
-      msg.includes('Contract not found') ||
-      msg.includes('contract not found') ||
-      msg.includes('not a valid')
-    if (!isProgrammingError) {
-      setOffline(true)
-    }
-    return cachedTotalAssets ?? 0
+    if (isTransportError(e)) setOffline(true)
+    throw e instanceof Error ? e : new Error(String(e))
   }
 }
 
@@ -294,25 +287,71 @@ export async function fetchUtilizationBps(
   network = STELLAR_NETWORK,
 ): Promise<number> {
   if (!CONTRACT_ID) return 0
-  if (offline) return 0
   const { scValToNative } = await import('@stellar/stellar-sdk')
   try {
     const retval = await sorobanSimulate(sourceAddress, 'get_utilization_bps', [], network)
     return Number(scValToNative(retval))
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    const isProgrammingError =
-      msg.includes('Invalid address') ||
-      msg.includes('invalid address') ||
-      msg.includes('Malformed') ||
-      msg.includes('malformed') ||
-      msg.includes('Contract not found') ||
-      msg.includes('contract not found') ||
-      msg.includes('not a valid')
-    if (!isProgrammingError) {
-      setOffline(true)
+    if (isTransportError(e)) setOffline(true)
+    throw e instanceof Error ? e : new Error(String(e))
+  }
+}
+
+export interface VaultLimits {
+  paused: boolean
+  minDeposit: number
+  minWithdrawShares: number
+  maxTx: number
+  lockExpiresAt: number
+  utilizationBps: number
+}
+
+export async function fetchVaultLimits(
+  sourceAddress: string,
+  network = STELLAR_NETWORK,
+): Promise<VaultLimits> {
+  const defaults: VaultLimits = {
+    paused: false,
+    minDeposit: MIN_DEPOSIT_USDC,
+    minWithdrawShares: MIN_WITHDRAW_SHARES,
+    maxTx: 482,
+    lockExpiresAt: 0,
+    utilizationBps: 0,
+  }
+
+  if (!CONTRACT_ID || offline) {
+    return defaults
+  }
+
+  const { scValToNative, Address } = await import('@stellar/stellar-sdk')
+
+  try {
+    const [pausedVal, lockVal, maxTxVal, utilVal] = await Promise.all([
+      sorobanSimulate(sourceAddress, 'is_paused', [], network).catch(() => undefined),
+      sorobanSimulate(
+        sourceAddress,
+        'get_deposit_lock_expiry',
+        [new Address(sourceAddress).toScVal()],
+        network,
+      ).catch(() => undefined),
+      sorobanSimulate(sourceAddress, 'max_transaction_amount', [], network).catch(() => undefined),
+      sorobanSimulate(sourceAddress, 'get_utilization_bps', [], network).catch(() => undefined),
+    ])
+
+    return {
+      paused: pausedVal !== undefined ? Boolean(scValToNative(pausedVal)) : defaults.paused,
+      minDeposit: defaults.minDeposit,
+      minWithdrawShares: defaults.minWithdrawShares,
+      maxTx: maxTxVal !== undefined ? Number(scValToNative(maxTxVal)) / SCALE : defaults.maxTx,
+      lockExpiresAt:
+        lockVal !== undefined ? Number(scValToNative(lockVal)) : defaults.lockExpiresAt,
+      utilizationBps:
+        utilVal !== undefined ? Number(scValToNative(utilVal)) : defaults.utilizationBps,
     }
-    return 0
+  } catch {
+    // An unreachable node or a missing contract must not break the screen;
+    // the documented defaults are safe to render.
+    return defaults
   }
 }
 
@@ -348,6 +387,30 @@ export async function fetchPortfolio(account: string): Promise<OnChainPortfolio>
   }
 }
 
+/**
+ * Read claimable_yield(account) — unclaimed yield in USDC for an account.
+ * Returns 0 when NEXT_PUBLIC_VAULT_CONTRACT_ID is not set; throws on read errors.
+ */
+export async function fetchClaimableYield(
+  account: string,
+  network = STELLAR_NETWORK,
+): Promise<number> {
+  if (!CONTRACT_ID) return 0
+  const { Address, scValToNative } = await import('@stellar/stellar-sdk')
+  try {
+    const retval = await sorobanSimulate(
+      account,
+      'claimable_yield',
+      [new Address(account).toScVal()],
+      network,
+    )
+    return Number(scValToNative(retval)) / SCALE
+  } catch (e) {
+    if (isTransportError(e)) setOffline(true)
+    throw e instanceof Error ? e : new Error(String(e))
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Transaction helpers
 // ---------------------------------------------------------------------------
@@ -357,8 +420,93 @@ const TX_POLL_TIMEOUT_S = 30
 
 export interface TransactionConfirmation {
   status: string
-  resultMetaXdr?: string
   returnValue?: unknown
+  events?: { contractEventsXdr?: unknown[] }
+}
+
+function decodeWithdrawConfirmation(
+  confirmation: TransactionConfirmation,
+  shares: bigint,
+  xdr: typeof import('@stellar/stellar-sdk').xdr,
+  scValToNative: typeof import('@stellar/stellar-sdk').scValToNative,
+): { queued: boolean; estimatedAmount?: number } {
+  let returned: unknown
+  try {
+    const rawReturn = confirmation.returnValue
+    returned =
+      typeof rawReturn === 'bigint' || typeof rawReturn === 'number'
+        ? rawReturn
+        : rawReturn == null
+          ? undefined
+          : scValToNative(rawReturn as Parameters<typeof scValToNative>[0])
+  } catch {
+    returned = undefined
+  }
+
+  const queued = shares > 0n && (returned === 0n || returned === 0)
+  let estimatedAmount =
+    (typeof returned === 'bigint' && returned > 0n) ||
+    (typeof returned === 'number' && returned > 0)
+      ? Number(returned) / SCALE
+      : undefined
+
+  for (const rawEvent of confirmation.events?.contractEventsXdr ?? []) {
+    try {
+      const event =
+        typeof rawEvent === 'string'
+          ? xdr.ContractEvent.fromXDR(rawEvent, 'base64')
+          : (rawEvent as InstanceType<typeof xdr.ContractEvent>)
+      const eventV0 = event.body().v0()
+      const isWithdrawQueued = eventV0.topics().some((topic) => {
+        try {
+          return scValToNative(topic) === 'withdraw_queued'
+        } catch {
+          return false
+        }
+      })
+      if (!isWithdrawQueued) continue
+
+      const data = scValToNative(eventV0.data())
+      const owed =
+        data instanceof Map
+          ? data.get('usdc_owed')
+          : data && typeof data === 'object'
+            ? (data as Record<string, unknown>).usdc_owed
+            : undefined
+      if (typeof owed === 'bigint' || typeof owed === 'number') {
+        estimatedAmount = Number(owed) / SCALE
+      }
+    } catch {
+      // Ignore malformed or unrelated events in the RPC response.
+    }
+  }
+
+  return { queued, estimatedAmount }
+}
+
+class TransactionFailedError extends Error {}
+
+function extractContractError(result: unknown): string {
+  let foundCode: string | undefined
+  function walk(obj: unknown) {
+    if (foundCode || !obj || typeof obj !== 'object') return
+    if (Array.isArray(obj)) {
+      for (const item of obj) walk(item)
+      return
+    }
+    const rec = obj as Record<string, unknown>
+    const sw = rec._switch
+    if (sw && typeof sw === 'object' && (sw as Record<string, unknown>).name === 'sceContract') {
+      const val = rec._value
+      if (typeof val === 'number') {
+        foundCode = val.toString()
+        return
+      }
+    }
+    for (const value of Object.values(rec)) walk(value)
+  }
+  walk(result)
+  return foundCode ? `Error(Contract, #${foundCode})` : ''
 }
 
 /** Poll until a submitted transaction reaches a terminal status. */
@@ -377,11 +525,14 @@ async function waitForTransaction(hash: string): Promise<TransactionConfirmation
       return result as unknown as TransactionConfirmation
     }
     if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
-      throw new Error('Transaction failed on-chain')
+      const contractErr = extractContractError(result)
+      throw new TransactionFailedError(
+        `Transaction failed on-chain${contractErr ? `: ${contractErr}` : ''}`,
+      )
     }
     // NOT_FOUND means still pending, keep polling
   }
-  throw new Error('Transaction confirmation timed out')
+  throw new TransactionPendingError(hash)
 }
 
 /**
@@ -393,9 +544,8 @@ async function invokeSigned(
   method: string,
   args: XdrTypes.ScVal[],
   sign: (xdr: string) => Promise<string>,
+  amount?: number,
 ): Promise<{ hash: string; confirmation: TransactionConfirmation }> {
-  if (offline) throw new Error('Stellar node is offline')
-
   const { rpc, Contract, TransactionBuilder, Horizon, Transaction } =
     await import('@stellar/stellar-sdk')
 
@@ -403,12 +553,15 @@ async function invokeSigned(
   const horizon = new Horizon.Server(HORIZON_URL, { allowHttp: allowHttpFor(HORIZON_URL) })
   const contract = new Contract(CONTRACT_ID!)
 
-  const account = await withTimeout(
-    horizon.loadAccount(address),
-    'Stellar Horizon timed out loading account',
-  )
+  const [account, baseFee] = await Promise.all([
+    withTimeout(horizon.loadAccount(address), 'Stellar Horizon timed out loading account'),
+    horizon.fetchBaseFee().catch(() => 100),
+  ])
 
-  const tx = new TransactionBuilder(account, { fee: '100', networkPassphrase: NETWORK_PASSPHRASE })
+  const tx = new TransactionBuilder(account, {
+    fee: baseFee.toString(),
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
     .addOperation(contract.call(method, ...args))
     .setTimeout(180)
     .build()
@@ -423,15 +576,160 @@ async function invokeSigned(
   const signedXdr = await sign(assembled.toXDR())
   const signedTx = new Transaction(signedXdr, NETWORK_PASSPHRASE)
 
-  const sendResult = await withTimeout(
-    server.sendTransaction(signedTx),
-    'Stellar RPC timed out submitting transaction',
-  )
-  if (sendResult.status === 'ERROR')
-    throw new Error(`Send failed: ${JSON.stringify(sendResult.errorResult)}`)
+  const localHash = signedTx.hash().toString('hex')
+  const fee = Number(assembled.fee) / SCALE
+  const ext = assembled.toEnvelope().v1().tx().ext()
+  const resourceFee =
+    ext.switch() === 1 ? Number(ext.sorobanData().resourceFee().toString()) / SCALE : 0
+  recordTransaction({
+    hash: localHash,
+    kind: method,
+    amount,
+    address,
+    status: 'pending',
+    fee,
+    resourceFee,
+    inclusionFee: Math.max(0, fee - resourceFee),
+  })
+  let hash = localHash
+  try {
+    let sendResult
+    let retries = 0
+    const MAX_RETRIES = 5
+    while (true) {
+      sendResult = await withTimeout(
+        server.sendTransaction(signedTx),
+        'Stellar RPC timed out submitting transaction',
+      )
+      if (sendResult.status === 'TRY_AGAIN_LATER') {
+        if (retries < MAX_RETRIES) {
+          retries++
+          await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, retries - 1)))
+          continue
+        }
+        throw new TransactionFailedError('Send failed: TRY_AGAIN_LATER')
+      }
+      break
+    }
 
-  const confirmation = await waitForTransaction(sendResult.hash)
-  return { hash: sendResult.hash, confirmation }
+    if (sendResult.status === 'ERROR') {
+      const contractErr = extractContractError(sendResult)
+      const msg = contractErr
+        ? contractErr
+        : JSON.stringify(sendResult.errorResult ?? 'unknown', (_, v) =>
+            typeof v === 'bigint' ? v.toString() : v,
+          )
+      throw new TransactionFailedError(`Send failed: ${msg}`)
+    }
+
+    // DUPLICATE and PENDING fall through to polling.
+    // The RPC hash should equal the hash computed from the signed envelope.
+    if (sendResult.hash && sendResult.hash !== localHash) {
+      throw new TransactionPendingError(localHash)
+    }
+    hash = sendResult.hash || localHash
+    const confirmation = await waitForTransaction(hash)
+    updateTransaction(hash, 'confirmed', { error: undefined })
+    return { hash, confirmation }
+  } catch (error) {
+    if (error instanceof TransactionFailedError) {
+      updateTransaction(hash, 'failed', { error: error.message })
+      throw error
+    }
+    updateTransaction(hash, 'timeout_pending', { error: undefined })
+    throw new TransactionPendingError(hash)
+  }
+}
+
+/**
+ * Estimate the real Soroban resource fee for a deposit or withdraw transaction via simulation.
+ * Returns an estimated maximum network fee in XLM, or null when unavailable.
+ */
+export async function estimateTransactionFee(
+  kind: 'deposit' | 'withdraw',
+  amount: number,
+  address: string,
+  slippageTolerance = 0.005,
+): Promise<number | null> {
+  if (!CONTRACT_ID || offline || !address) {
+    return null
+  }
+
+  try {
+    const { rpc, Contract, TransactionBuilder, Horizon, nativeToScVal } =
+      await import('@stellar/stellar-sdk')
+
+    const server = new rpc.Server(RPC_URL, { allowHttp: allowHttpFor(RPC_URL) })
+    const horizon = new Horizon.Server(HORIZON_URL, { allowHttp: allowHttpFor(HORIZON_URL) })
+    const contract = new Contract(CONTRACT_ID)
+
+    const [account, baseFee] = await Promise.all([
+      withTimeout(horizon.loadAccount(address), 'Stellar Horizon timed out loading account'),
+      horizon.fetchBaseFee().catch(() => 100),
+    ])
+
+    let args: XdrTypes.ScVal[] = []
+    if (kind === 'deposit') {
+      const minShares = Math.floor((amount / cachedSharePrice) * (1 - slippageTolerance) * SCALE)
+      args = [
+        nativeToScVal(toStroops(amount), { type: 'i128' }),
+        nativeToScVal(BigInt(minShares), { type: 'i128' }),
+      ]
+    } else {
+      const shares = Math.round((amount / cachedSharePrice) * SCALE)
+      const minUsdcReturn = Math.floor(amount * (1 - slippageTolerance) * SCALE)
+      args = [
+        nativeToScVal(BigInt(shares), { type: 'i128' }),
+        nativeToScVal(BigInt(minUsdcReturn), { type: 'i128' }),
+      ]
+    }
+
+    const tx = new TransactionBuilder(account, {
+      fee: baseFee.toString(),
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(contract.call(kind, ...args))
+      .setTimeout(180)
+      .build()
+
+    const simResult = await withTimeout(
+      server.simulateTransaction(tx),
+      'Stellar RPC timed out during simulation',
+    )
+
+    if ('error' in simResult) return null
+
+    const assembled = rpc.assembleTransaction(tx, simResult).build()
+    const feeInUnits = Number(assembled.fee) / SCALE
+    return feeInUnits > 0 ? feeInUnits : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Check single transaction status on-chain.
+ */
+export async function checkTransactionOnChain(
+  hash: string,
+): Promise<'confirmed' | 'failed' | 'pending'> {
+  if (!CONTRACT_ID || hash.startsWith('demo')) {
+    return 'confirmed'
+  }
+  try {
+    const { rpc } = await import('@stellar/stellar-sdk')
+    const server = new rpc.Server(RPC_URL, { allowHttp: allowHttpFor(RPC_URL) })
+    const result = await server.getTransaction(hash)
+    if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) {
+      return 'confirmed'
+    }
+    if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
+      return 'failed'
+    }
+    return 'pending'
+  } catch {
+    return 'pending'
+  }
 }
 
 /**
@@ -454,9 +752,10 @@ export async function submitDeposit(
   if (!CONTRACT_ID) {
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
-        resolve(
-          `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`,
-        )
+        const demoHash = `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`
+        recordTransaction({ hash: demoHash, kind: 'deposit', status: 'confirmed', amount })
+        notifyTransactionConfirmed(demoHash, 'deposit')
+        resolve(demoHash)
       }, SIMULATED_DEPOSIT_DELAY_MS)
       if (signal) {
         signal.addEventListener('abort', () => {
@@ -481,7 +780,9 @@ export async function submitDeposit(
       nativeToScVal(BigInt(minShares), { type: 'i128' }),
     ],
     sign,
+    amount,
   )
+  notifyTransactionConfirmed(hash, 'deposit')
   return hash
 }
 
@@ -509,7 +810,9 @@ export async function submitWithdraw(
       const timer = setTimeout(() => {
         const demoHash = `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`
         const isQueued = amount > 236
-        resolve(createWithdrawResult(demoHash, isQueued, isQueued ? 1 : undefined, amount))
+        recordTransaction({ hash: demoHash, kind: 'withdraw', status: 'confirmed', amount })
+        notifyTransactionConfirmed(demoHash, 'withdraw')
+        resolve(createWithdrawResult(demoHash, isQueued, amount))
       }, SIMULATED_WITHDRAW_DELAY_MS)
       if (signal) {
         signal.addEventListener('abort', () => {
@@ -526,7 +829,25 @@ export async function submitWithdraw(
 
   const { nativeToScVal, xdr, scValToNative } = await import('@stellar/stellar-sdk')
 
-  const shares = Math.round((amount / cachedSharePrice) * SCALE)
+  const [priceStr, portfolio] = await Promise.all([
+    fetchSharePrice(address),
+    fetchPortfolio(address),
+  ])
+
+  const livePrice = Number(priceStr)
+  if (!livePrice || isNaN(livePrice)) {
+    throw new Error('No live share price available')
+  }
+
+  let shares = Math.floor((amount / livePrice) * SCALE)
+  const maxShares = Math.floor(portfolio.shares * SCALE)
+
+  if (shares >= maxShares) {
+    shares = maxShares
+    // Recalculate amount based on the exact shares being burned so minUsdcReturn calculation matches
+    amount = (shares / SCALE) * livePrice
+  }
+
   const minUsdcReturn = Math.floor(amount * (1 - slippageTolerance) * SCALE)
   const { hash, confirmation: conf } = await invokeSigned(
     address,
@@ -536,127 +857,17 @@ export async function submitWithdraw(
       nativeToScVal(BigInt(minUsdcReturn), { type: 'i128' }),
     ],
     sign,
+    amount,
   )
-  let queued = false
-  let position: number | undefined
-  let estimatedAmount = amount
-
-  const inspectEvent = (rawEvt: unknown) => {
-    try {
-      const anyEvt = rawEvt as {
-        event?: () => unknown
-        body?: () => {
-          v0?: () => {
-            topics?: () => unknown[]
-            data?: () => unknown
-          }
-        }
-      }
-      const contractEvt = (typeof anyEvt.event === 'function' ? anyEvt.event() : anyEvt) as {
-        body?: () => {
-          v0?: () => {
-            topics?: () => unknown[]
-            data?: () => unknown
-          }
-        }
-      }
-      const body = typeof contractEvt.body === 'function' ? contractEvt.body() : undefined
-      const v0 = typeof body?.v0 === 'function' ? body.v0() : undefined
-      if (!v0) return
-
-      const topics = typeof v0.topics === 'function' ? v0.topics() ?? [] : []
-      const topicStrs = topics.map((t) => {
-        try {
-          return String(scValToNative(t as Parameters<typeof scValToNative>[0]))
-        } catch {
-          return ''
-        }
-      })
-
-      if (
-        topicStrs.some((s) => {
-          const lower = s.toLowerCase()
-          return lower.includes('withdrawqueued') || lower.includes('withdraw_queued')
-        })
-      ) {
-        queued = true
-        try {
-          const dataVal = typeof v0.data === 'function' ? v0.data() : undefined
-          if (!dataVal) return
-          const rawData = scValToNative(dataVal as Parameters<typeof scValToNative>[0])
-          if (rawData && typeof rawData === 'object') {
-            const record = rawData as Record<string, unknown>
-            if ('position' in record) position = Number(record.position)
-            if ('amount' in record) estimatedAmount = Number(record.amount) / 1e7
-          } else if (typeof rawData === 'bigint' || typeof rawData === 'number') {
-            position = Number(rawData)
-          }
-        } catch {
-          /* ignore payload parse error */
-        }
-      }
-    } catch {
-      /* ignore event inspect error */
-    }
-  }
-
-  const anyConf = conf as unknown as {
-    resultMetaXdr?: unknown
-    returnValue?: unknown
-    diagnosticEventsXdr?: unknown[]
-    events?: { contractEventsXdr?: unknown[][] }
-  }
-
-  // 1. Inspect contract events array from RPC response
-  if (anyConf.events?.contractEventsXdr && Array.isArray(anyConf.events.contractEventsXdr)) {
-    for (const group of anyConf.events.contractEventsXdr) {
-      if (Array.isArray(group)) {
-        for (const evt of group) inspectEvent(evt)
-      }
-    }
-  }
-
-  // 2. Inspect diagnostic events
-  if (anyConf.diagnosticEventsXdr && Array.isArray(anyConf.diagnosticEventsXdr)) {
-    for (const diag of anyConf.diagnosticEventsXdr) inspectEvent(diag)
-  }
-
-  // 3. Inspect resultMetaXdr (both parsed object and base64 string)
-  if (anyConf.resultMetaXdr) {
-    try {
-      let meta: unknown = anyConf.resultMetaXdr
-      if (typeof meta === 'string') {
-        meta = xdr.TransactionMeta.fromXDR(meta, 'base64')
-      }
-      const typedMeta = meta as {
-        v3?: () => { sorobanMeta?: () => { events?: () => unknown[] } }
-        switch?: () => number
-        value?: () => { sorobanMeta?: () => { events?: () => unknown[] } }
-      }
-      const v3 = typedMeta.v3?.() || (typedMeta.switch?.() === 3 || typedMeta.switch?.() === 4 ? typedMeta.value?.() : null)
-      const events = v3?.sorobanMeta?.()?.events?.() ?? []
-      for (const evt of events) inspectEvent(evt)
-    } catch {
-      /* ignore meta parse error */
-    }
-  }
-
-  // 4. Inspect return value if contract returns QueuedClaim struct or status
-  if (anyConf.returnValue) {
-    try {
-      const ret = scValToNative(anyConf.returnValue as Parameters<typeof scValToNative>[0])
-      if (ret && typeof ret === 'object') {
-        const record = ret as Record<string, unknown>
-        if ('queued' in record && Boolean(record.queued)) queued = true
-        if ('position' in record) position = Number(record.position)
-        if ('amount' in record) estimatedAmount = Number(record.amount) / 1e7
-      }
-    } catch {
-      /* ignore return value parse error */
-    }
-  }
-
-  return createWithdrawResult(hash, queued, position ?? (queued ? 1 : undefined), estimatedAmount)
+  const { queued, estimatedAmount } = decodeWithdrawConfirmation(
+    conf,
+    BigInt(shares),
+    xdr,
+    scValToNative,
+  )
+  const result = createWithdrawResult(hash, queued, estimatedAmount)
+  notifyTransactionConfirmed(hash, 'withdraw')
+  return result
 }
 
 /**
@@ -670,9 +881,10 @@ export async function submitClaim(
   if (!CONTRACT_ID) {
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
-        resolve(
-          `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`,
-        )
+        const demoHash = `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`
+        recordTransaction({ hash: demoHash, kind: 'claim', status: 'confirmed' })
+        notifyTransactionConfirmed(demoHash, 'claim')
+        resolve(demoHash)
       }, 1500)
       if (signal) {
         signal.addEventListener('abort', () => {
@@ -690,6 +902,7 @@ export async function submitClaim(
   // claim() is permissionless and takes no arguments; it pays queued
   // withdrawals in FIFO order to their owners.
   const { hash } = await invokeSigned(address, 'claim', [], sign)
+  notifyTransactionConfirmed(hash, 'claim')
   return hash
 }
 
@@ -703,9 +916,18 @@ export async function submitClaimYield(
 ): Promise<string> {
   if (!CONTRACT_ID) {
     await new Promise((resolve) => setTimeout(resolve, 1500))
-    return `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`
+    const demoHash = `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`
+    recordTransaction({ hash: demoHash, kind: 'claim_yield', status: 'confirmed' })
+    notifyTransactionConfirmed(demoHash, 'claim_yield')
+    return demoHash
   }
   const { Address } = await import('@stellar/stellar-sdk')
-  const { hash } = await invokeSigned(address, 'claim_yield', [new Address(address).toScVal()], sign)
+  const { hash } = await invokeSigned(
+    address,
+    'claim_yield',
+    [new Address(address).toScVal()],
+    sign,
+  )
+  notifyTransactionConfirmed(hash, 'claim_yield')
   return hash
 }

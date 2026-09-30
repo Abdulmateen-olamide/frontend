@@ -16,6 +16,7 @@
     "portfolio": "Votre portefeuille",
     "switchToDark": "Passer en sombre",
     "switchToLight": "Passer en clair",
+    "preferences": "Préférences",
     "language": "Langue",
     "account": "Compte",
     "watchlist": "Liste de suivi",
@@ -57,9 +58,9 @@
   "Landing": {
     "eyebrow": "Obligations vertes · sur Stellar",
     "title": "Possédez une part de la transition énergétique.",
-    "titleAccent": " Dès un dollar.",
+    "titleAccent": " Investissez dans des projets verts vérifiés.",
     "sub": "Un pool transparent qui finance des projets verts vérifiés. Chaque chiffre est traçable sur la chaîne en deux clics — jamais de surprise.",
-    "ctaStart": "Commencer avec un dollar",
+    "ctaStart": "Découvrir les options d’investissement",
     "ctaExplore": "Voir où le pool agit",
     "poolValue": "Valeur du pool",
     "projectsFunded": "Projets financés",
@@ -68,7 +69,7 @@
     "howTitle": "Comment ça marche",
     "howSub": "Un pool, plusieurs projets. Vous déposez des USDC et recevez des parts d'un portefeuille sélectionné et noté par un oracle.",
     "step1Title": "Déposer des USDC",
-    "step1Body": "Dès un dollar. Vous voyez toujours ce que vous recevez avant de signer.",
+    "step1Body": "Déposez des USDC. Le minimum actuel est affiché avant confirmation.",
     "step2Title": "Recevoir des parts",
     "step2Body": "Des parts — techniquement des jetons SEP-41 nommés HBS. Votre participation dans tout le pool.",
     "step3Title": "Le pool finance les projets",
@@ -146,7 +147,7 @@
     "liquidLine": "Aujourd'hui le pool est <b>liquide à 29 %</b> — vous pouvez retirer votre part liquide à tout moment.",
     "investCta": "Investir {amount} USDC",
     "investCtaEmpty": "Investir",
-    "reasonMin": "Saisissez un montant d'au moins 1 USDC",
+    "reasonMin": "Saisissez au moins {min} USDC",
     "capMessage": "Vous détenez un solde de ${cap}. Vous pouvez investir jusqu'à ce montant aujourd'hui.",
     "maxChip": "Max",
     "depositMaxAvailable": "Investir le maximum disponible",
@@ -198,7 +199,8 @@
     "referralLink": "Your referral link",
     "referralCaption": "Share your link to invite friends. You both get rewards when they invest.",
     "copyLink": "Copy link",
-    "copied": "Copied"
+    "copied": "Copied",
+    "taxReports": "Rapports fiscaux"
   },
   "Withdraw": {
     "h1": "Retirer du pool",
@@ -210,7 +212,7 @@
     "withdrawCta": "Retirer ${amount}",
     "withdrawCtaEmpty": "Retirer",
     "reasonExceeds": "Le montant dépasse ce qui est liquide maintenant — utilisez Max",
-    "reasonMin": "Saisissez un montant d'au moins 1 USDC",
+    "reasonMin": "Saisissez au moins {min} USDC",
     "cancel": "Annuler",
     "pendingH1": "Traitement de votre retrait",
     "pendingSub": "Environ 5 secondes sur Stellar. tx 4d2c…9af1 ↗",
@@ -373,6 +375,9 @@
     "backAriaHidden": "←",
     "backLabel": "Retour aux projets",
     "verifiedSince": "Créateur vérifié · depuis {since}",
+    "verifiedMetadata": "Métadonnées vérifiées",
+    "metadataMismatch": "Discordance des métadonnées",
+    "unverifiedMetadata": "Métadonnées non vérifiées",
     "builtBy": "Construit par",
     "scoresTitle": "Scores vérifiés par l'oracle",
     "creditLabel": "Qualité de crédit",
@@ -389,13 +394,36 @@
     "calcSummary": "Comment cela est-il calculé ?",
     "calcFormula": "rendement attendu = investissement × (crédit + vert) ÷ 200 — lisez-le dans le contrat ↗",
     "investCta": "Investir dans le pool qui finance cela",
-    "investNote": "Vous investissez dans le pool commun, qui finance ce projet parmi d'autres — pas une caisse par projet."
-  ,
+    "investNote": "Vous investissez dans le pool commun, qui finance ce projet parmi d'autres — pas une caisse par projet.",
     "pricingTitle": "Cours de l'obligation",
     "priceHistory": "Historique des prix",
     "priceLabel": "Prix",
     "yieldHistory": "Historique des rendements",
-    "yieldLabel": "Rendement"
+    "yieldLabel": "Rendement",
+    "yieldHelpLabel": "À propos du rendement de l’obligation",
+    "yieldHelp": "Il s’agit du rendement indicatif actuel de l’obligation. Touchez pour en savoir plus ; ce rendement n’est pas garanti."
+  },
+  "PriceHistory": {
+    "title": "Cours de l'obligation",
+    "caption": "Observations vérifiées par l'oracle, {range}.",
+    "ariaLabel": "Historique des cours de l'obligation",
+    "priceLabel": "Prix",
+    "priceUnit": "% du pair",
+    "priceAriaLabel": "Tendance de l'historique des prix",
+    "yieldLabel": "Rendement",
+    "yieldAriaLabel": "Tendance de l'historique des rendements",
+    "since": "depuis {date}"
+  },
+  "TaxReports": {
+    "title": "Rapports fiscaux trimestriels",
+    "exportCsv": "Exporter CSV",
+    "disclaimer": "Ceci est un résumé illustratif pour la tenue de registres, pas un conseil fiscal. Consultez un professionnel de la fiscalité pour votre déclaration.",
+    "columnQuarter": "Trimestre",
+    "columnDeposits": "Dépôts",
+    "columnWithdrawals": "Retraits",
+    "columnDistributions": "Distributions",
+    "columnRealizedGain": "Gain réalisé",
+    "currencyFormat": "{amount} $"
   },
   "PasswordResetEmail": {
     "subject": "Réinitialisez votre mot de passe Heliobond",
@@ -454,5 +482,117 @@
     "yourReferralLink": "Your referral link",
     "copyLink": "Copy referral link",
     "copied": "Copied"
+  },
+  "ContractErrors": {
+    "vault_AmountNotPositive": "Saisissez un montant supérieur à zéro.",
+    "vault_DepositExceedsMaximum": "Ce dépôt dépasse le maximum par dépôt. Essayez un montant plus faible.",
+    "vault_DepositBelowMinimum": "Ce dépôt est inférieur au montant minimum. Essayez un montant plus élevé.",
+    "vault_WithdrawBelowMinimum": "Ce retrait est inférieur au montant minimum. Essayez de retirer plus de parts.",
+    "vault_SharesNotPositive": "Saisissez un nombre de parts supérieur à zéro.",
+    "vault_WithdrawalExceedsLimit": "Essayez un montant plus faible — la liquidité est limitée pour le moment.",
+    "vault_WithdrawalExceedsLimitUtil": "Essayez un montant plus faible — la liquidité est limitée pour le moment (utilisation {utilization} %).",
+    "vault_InsufficientLiquid": "Pas assez de liquidités pour payer maintenant. Essayez un montant plus faible ou rejoignez la file de retrait.",
+    "vault_InsufficientLiquidUtil": "Pas assez de liquidités pour payer maintenant (utilisation {utilization} %). Essayez un montant plus faible ou rejoignez la file de retrait.",
+    "vault_SlippageLimitExceeded": "Le prix a varié au-delà de votre tolérance de glissement. Actualisez le devis ou augmentez la tolérance, puis réessayez.",
+    "vault_Paused": "Le coffre est en pause pour maintenance. Veuillez réessayer plus tard.",
+    "vault_RegistryPaused": "Les nouveaux investissements sont suspendus pour le moment. Veuillez réessayer plus tard.",
+    "vault_DepositLocked": "Votre dépôt récent est encore dans sa période de blocage. Vous pourrez retirer à son terme.",
+    "vault_MaxSupplyExceeded": "Le pool a atteint sa taille maximale, ce dépôt ne peut pas être accepté. Essayez un montant plus faible ou revenez plus tard.",
+    "vault_InvestmentCapExceeded": "Ce projet a atteint son plafond de financement. Choisissez un montant plus faible ou un autre projet.",
+    "vault_ExceedsMaxTransactionAmount": "Ce montant dépasse la limite par transaction. Fractionnez-le en transactions plus petites.",
+    "vault_TransferToVaultBlocked": "Les parts ne peuvent pas être envoyées à l'adresse du coffre. Vérifiez le destinataire et réessayez.",
+    "vault_FundingRoundActive": "Les transferts de parts sont suspendus pendant un tour de financement. Réessayez à sa clôture.",
+    "vault_ProjectNotFound": "Nous n'avons pas trouvé ce projet. Actualisez la page et réessayez.",
+    "vault_BelowMinCreditQuality": "La qualité de crédit de ce projet est inférieure au minimum du pool, il ne peut donc pas être financé.",
+    "vault_BelowMinGreenImpact": "L'impact vert de ce projet est inférieur au minimum du pool, il ne peut donc pas être financé.",
+    "vault_InsufficientInsurance": "Le fonds d'assurance ne peut pas couvrir cette réclamation pour le moment.",
+    "vault_InsuranceAlreadyClaimed": "L'assurance a déjà été réclamée pour ce projet.",
+    "vault_InsufficientLiquidYield": "Pas assez de liquidités pour verser votre rendement maintenant. Veuillez réessayer plus tard.",
+    "vault_ProjectAlreadySettled": "Ce projet a déjà été réglé et est fermé à toute nouvelle activité.",
+    "vault_ProjectNotMature": "Ce projet n'a pas encore atteint sa date d'échéance.",
+    "vault_SelfFundingNotAllowed": "Ce projet ne peut pas être financé depuis le compte de l'administrateur du coffre.",
+    "vault_SelfTransferNotAllowed": "Vous ne pouvez pas transférer vers votre propre adresse. Choisissez un autre destinataire.",
+    "registry_Paused": "Le registre des projets est en pause pour le moment. Veuillez réessayer plus tard.",
+    "registry_ProjectNotFound": "Nous n'avons pas trouvé ce projet. Actualisez la page et réessayez.",
+    "registry_ProjectArchived": "Ce projet est archivé et ne peut pas être modifié.",
+    "registry_ProjectHasInvestments": "Ce projet a des investissements actifs, il ne peut donc pas être supprimé.",
+    "registry_ProjectNotMature": "Ce projet n'a pas encore atteint sa date d'échéance.",
+    "registry_NotWhitelisted": "Cette adresse n'est pas encore autorisée à créer des projets.",
+    "registry_UpdateTooFrequent": "Ce projet a été mis à jour très récemment. Patientez un peu avant de le mettre à jour de nouveau.",
+    "category_admin": "Cette action est réservée aux administrateurs autorisés.",
+    "category_unavailable": "Cette fonctionnalité n'est pas disponible pour le moment. Veuillez réessayer plus tard.",
+    "category_invalid": "Une des valeurs n'est pas valide. Vérifiez votre saisie et réessayez.",
+    "category_bridge": "Ce transfert inter-chaînes n'a pas pu être effectué. Contactez le support si le problème persiste.",
+    "category_governance": "Ce vote ou cette proposition ne peut pas être traité dans son état actuel.",
+    "unknown": "Le contrat a rejeté cette transaction. Veuillez réessayer et contacter le support si le problème persiste."
+  },
+  "Telemetry": {
+    "label": "Télémétrie",
+    "title": "Aidez-nous à améliorer Heliobond",
+    "body": "Pouvons-nous envoyer des rapports d'erreurs anonymes et des mesures de performance des pages ? Nous n'envoyons jamais d'adresses de portefeuille, de hashes de transaction, d'adresses e-mail ni de données de transaction.",
+    "learnMore": "Ce que nous collectons",
+    "accept": "Autoriser",
+    "decline": "Non merci",
+    "statusOn": "Autorisée",
+    "statusOff": "Désactivée",
+    "statusUndecided": "Non définie"
+  },
+  "Metadata": {
+    "home": {
+      "title": "L’énergie solaire, rendue financière",
+      "description": "Participez à la transition énergétique grâce à un pool transparent qui finance des projets verts vérifiés sur Stellar."
+    },
+    "connect": {
+      "title": "Connecter votre portefeuille",
+      "description": "Connectez un portefeuille Stellar à Heliobond, ou ouvrez une session démo pour tester le parcours investisseur sans extension."
+    },
+    "explore": {
+      "title": "Explorer les obligations vertes",
+      "description": "Parcourez des projets d’énergie solaire, éolienne et hydroélectrique vérifiés. Filtrez par type d’actif et consultez les scores de crédit et environnemental."
+    },
+    "creator": {
+      "title": "Espace créateur",
+      "description": "Postulez au registre de projets Heliobond, construisez la fiche d’un projet vert et suivez la notation de l’oracle."
+    },
+    "deposit": {
+      "title": "Déposer",
+      "description": "Investissez des USDC dans une obligation verte vérifiée et recevez vos parts du pool."
+    },
+    "learn": {
+      "title": "Comment fonctionne Heliobond",
+      "description": "Explication simple du pool d’obligations vertes : où va l’argent, comment le rendement est calculé et qui vérifie les chiffres."
+    },
+    "portfolio": {
+      "title": "Votre portefeuille",
+      "description": "Votre position Heliobond, le rendement projeté et l’historique de vos dépôts."
+    },
+    "taxReports": {
+      "title": "Rapports fiscaux",
+      "description": "Téléchargez les rapports fiscaux consolidés de vos investissements Heliobond."
+    },
+    "risk": {
+      "title": "Avertissement sur les risques",
+      "description": "Ce qui peut mal tourner en investissant dans les obligations vertes Heliobond : liquidité, notation oracle et scénarios de perte."
+    },
+    "verify": {
+      "title": "Tout vérifier",
+      "description": "Les contrats Heliobond sont publics, la cadence de l’oracle est documentée et la formule de rendement est écrite noir sur blanc."
+    },
+    "watchlist": {
+      "title": "Liste de suivi",
+      "description": "Les obligations que vous avez enregistrées, et celles qui acceptent encore des investissements."
+    },
+    "withdraw": {
+      "title": "Retirer",
+      "description": "Remboursez vos parts du pool Heliobond en USDC."
+    },
+    "admin": {
+      "title": "Console admin",
+      "description": "Console interne Heliobond : statistiques du vault, registre de projets, notation oracle et liste des créateurs autorisés."
+    },
+    "projectNotFound": {
+      "title": "Projet introuvable",
+      "description": "Le projet d’énergie verte demandé est introuvable."
+    }
   }
 }

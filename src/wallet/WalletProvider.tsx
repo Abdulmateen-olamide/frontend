@@ -7,25 +7,49 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react'
 import { STELLAR_NETWORK_UPPERCASE, passphraseForNetwork } from '../config/network'
 import { NetworkMismatchError, isNetworkMismatch } from './networkGuard'
+import {
+  DEMO_WALLET_ID,
+  clearSession,
+  getServerSession,
+  getSession,
+  saveNetwork,
+  saveSession,
+  subscribeSession,
+  UNREAD_SESSION,
+  type AppNetwork,
+} from './session'
 import type { Networks } from '@creit.tech/stellar-wallets-kit/types'
+
+/**
+ * Why the wallet is no longer connected. `'user'` means the user asked for it
+ * (Disconnect button, or session expiry) and the UI should stay quiet; anything
+ * else means the session dropped on its own and callers may want to warn (#595).
+ */
+export type DisconnectReason = 'user' | 'lost'
 
 interface WalletContextValue {
   address: string | null
   connected: boolean
   connecting: boolean
+  /** True when the wallet is initializing, connecting, or syncing with the Stellar network (#473). */
+  syncing: boolean
   isDemo: boolean
   restoring: boolean
   connectionError: string | null
   retryCount: number
   connect: () => Promise<void>
   connectDemo: () => void
-  disconnect: () => void
+  disconnect: (reason?: DisconnectReason) => void
   retry: () => Promise<void>
-  sign: (xdr: string) => Promise<string>
+  /** Sign a transaction XDR. `passphrase` overrides the app network (SEP-10 challenges). */
+  sign: (xdr: string, passphrase?: string) => Promise<string>
+  /** Sign an arbitrary message (SEP-53 / SEP-43 signMessage) for wallet sign-in (#603). */
+  signMessage: (message: string) => Promise<string>
   network: 'PUBLIC' | 'TESTNET'
   setNetwork: (network: 'PUBLIC' | 'TESTNET') => void
   /** Passphrase the connected wallet reports, or null if unknown / not connected. */
@@ -34,6 +58,8 @@ interface WalletContextValue {
   networkMismatch: boolean
   /** Re-read the wallet's network; resolves true when it matches the app. */
   checkWalletNetwork: () => Promise<boolean>
+  /** Why the wallet disconnected, or null while connected (#595). */
+  lastDisconnectReason: DisconnectReason | null
 }
 
 const WalletContext = createContext<WalletContextValue | null>(null)
@@ -50,52 +76,44 @@ export function shortAddress(address: string, lead = 4, tail = 3): string {
   return `${address.slice(0, lead)}…${suffix}`
 }
 
-const DEMO_ADDRESS = 'GBQHWXVZ2K4M6N8P3R5T7W9YA2C4E6G8J3L5Q7S9U2X4Z6B8D1F3H59XQ'
+// Valid Ed25519 public key so demo sessions can also drive on-chain reads
+// (simulation source); mirrors SIMULATION_SOURCE_ADDRESS in registry.ts (#625).
+const DEMO_ADDRESS = 'GCOQ4JRRUC7SBUXLKYXFCZPJWTKDFTULI6DOGB75DZNAVGIST3BNC6UX'
 const CONNECT_TIMEOUT_MS = 15000
 const MAX_AUTO_RETRIES = 2
 
 const getInitialNetwork = (): 'PUBLIC' | 'TESTNET' => STELLAR_NETWORK_UPPERCASE
 
-export function WalletProvider({ children }: {children: ReactNode}) {
-  const [address, setAddress] = useState<string | null>(null)
+export function WalletProvider({ children }: { children: ReactNode }) {
+  // The persisted session is read through an external store rather than an
+  // effect: the first client render already matches it, so there is no
+  // hydration mismatch and no cascading render (#595, #598).
+  const stored = useSyncExternalStore(subscribeSession, getSession, getServerSession)
+
   const [connecting, setConnecting] = useState(false)
-  const [isDemo, setIsDemo] = useState(false)
-  const [restoring, setRestoring] = useState(true)
+  const [syncing, setSyncing] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
-  const [network, setNetworkState] = useState<'PUBLIC' | 'TESTNET'>(getInitialNetwork)
-  const initedNetworkRef = useRef<'PUBLIC' | 'TESTNET' | null>(null)
   const [walletNetworkPassphrase, setWalletNetworkPassphrase] = useState<string | null>(null)
-  const appPassphrase = passphraseForNetwork(network)
+  const [lastDisconnectReason, setLastDisconnectReason] = useState<DisconnectReason | null>(null)
+  const initedNetworkRef = useRef<AppNetwork | null>(null)
+  const appPassphrase = passphraseForNetwork(stored.network ?? getInitialNetwork())
+
+  const address = stored.address || null
+  const isDemo = stored.walletId === DEMO_WALLET_ID
+  // Storage is only readable in the browser, so the server render and the first
+  // client render both see the unread snapshot. `restoring` stays true until
+  // the store has actually read it, which is what stops `RequireWallet` from
+  // bouncing a connected user to /connect on every page load (#595).
+  const restoring = stored === UNREAD_SESSION
+  const network: AppNetwork = stored.network ?? getInitialNetwork()
 
   const persist = useCallback((addr: string, walletId: string) => {
-    try {
-      localStorage.setItem('hb-address', addr)
-      localStorage.setItem('hb-wallet', walletId)
-    } catch {
-      /* ignore */
-    }
+    saveSession(addr, walletId)
   }, [])
 
-  const setNetwork = useCallback((n: 'PUBLIC' | 'TESTNET') => {
-    setNetworkState(n)
-    try {
-      localStorage.setItem('hb-network', n)
-    } catch {
-      /* ignore */
-    }
-  }, [])
-
-  // Load saved network from localStorage after mount (avoids hydration mismatch)
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('hb-network')
-      if (saved === 'PUBLIC' || saved === 'TESTNET') {
-        setNetworkState(saved)
-      }
-    } catch {
-      /* ignore */
-    }
+  const setNetwork = useCallback((n: AppNetwork) => {
+    saveNetwork(n)
   }, [])
 
   const ensureInit = useCallback(async () => {
@@ -105,7 +123,10 @@ export function WalletProvider({ children }: {children: ReactNode}) {
     const modules = defaultModules()
     // e2e builds only: a keypair-backed module so Playwright can sign without
     // a browser extension (#607). Never enabled on mainnet.
-    if (process.env.NEXT_PUBLIC_E2E_TEST_WALLET === 'true' && STELLAR_NETWORK_UPPERCASE !== 'PUBLIC') {
+    if (
+      process.env.NEXT_PUBLIC_E2E_TEST_WALLET === 'true' &&
+      STELLAR_NETWORK_UPPERCASE !== 'PUBLIC'
+    ) {
       const { E2ETestWalletModule } = await import('./e2eTestWallet')
       modules.unshift(new E2ETestWalletModule())
     }
@@ -134,83 +155,96 @@ export function WalletProvider({ children }: {children: ReactNode}) {
 
   const checkWalletNetwork = useCallback(async (): Promise<boolean> => {
     if (isDemo || !address) return true
-    const walletPassphrase = await readWalletNetwork()
-    return !isNetworkMismatch(walletPassphrase, appPassphrase)
+    setSyncing(true)
+    try {
+      const walletPassphrase = await readWalletNetwork()
+      return !isNetworkMismatch(walletPassphrase, appPassphrase)
+    } finally {
+      setSyncing(false)
+    }
   }, [isDemo, address, readWalletNetwork, appPassphrase])
 
+  // Re-attach the wallet module for a restored non-demo session. The address
+  // itself is already rendered from the store, so this only refreshes the
+  // network readout; a failure here must not clear the restored session.
+  const restoredWallet = stored.walletId
   useEffect(() => {
-    let saved: string | null = null
-    let savedWallet: string | null = null
-    try {
-      saved = localStorage.getItem('hb-address')
-      savedWallet = localStorage.getItem('hb-wallet')
-    } catch {
-      /* ignore */
-    }
-    if (!saved) {
-      setRestoring(false)
-      return
-    }
-    setAddress(saved)
-    setIsDemo(savedWallet === 'demo')
-    setRestoring(false)
-
-    if (savedWallet && savedWallet !== 'demo') {
-      void (async () => {
-        try {
-          await ensureInit()
-          const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
-          StellarWalletsKit.setWallet(savedWallet)
-          await readWalletNetwork()
-        } catch {
-          /* the wallet may be uninstalled now — the address still shows */
-        }
-      })()
-    }
-  }, [ensureInit, readWalletNetwork])
-
-  const connectWithRetry = useCallback(async (attempt = 0): Promise<void> => {
-    setConnecting(true)
-    setConnectionError(null)
-    try {
-      await ensureInit()
-      const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('timeout')), CONNECT_TIMEOUT_MS)
-      )
-      const authPromise = StellarWalletsKit.authModal() as Promise<{ address: string }>
-      const { address: addr } = await Promise.race([authPromise, timeoutPromise])
-      let walletId = 'wallet'
+    if (!address || !restoredWallet || restoredWallet === DEMO_WALLET_ID) return
+    let cancelled = false
+    void (async () => {
+      setSyncing(true)
       try {
-        walletId = StellarWalletsKit.selectedModule?.productId ?? 'wallet'
+        await ensureInit()
+        const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
+        StellarWalletsKit.setWallet(restoredWallet)
+        await readWalletNetwork()
       } catch {
-        /* fallback */
+        /* the wallet may be uninstalled now — the address still shows */
+      } finally {
+        if (!cancelled) setSyncing(false)
       }
-      setAddress(addr)
-      setIsDemo(false)
-      setRetryCount(0)
-      persist(addr, walletId)
-      await readWalletNetwork()
-    } catch (e) {
-      const isTimeout = e instanceof Error && e.message === 'timeout'
-      const isCancelled = e instanceof Error && /dismiss|cancel|closed/i.test(e.message)
-      if (isCancelled) {
-        return
-      }
-      if (isTimeout && attempt < MAX_AUTO_RETRIES) {
-        setRetryCount(attempt + 1)
-        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)))
-        return connectWithRetry(attempt + 1)
-      }
-      setConnectionError(
-        isTimeout
-          ? 'Connection timed out — please check your network and try again.'
-          : 'Could not connect to wallet — please try again.'
-      )
-    } finally {
-      setConnecting(false)
+    })()
+    return () => {
+      cancelled = true
     }
-  }, [ensureInit, persist, readWalletNetwork])
+  }, [address, restoredWallet, ensureInit, readWalletNetwork])
+
+  // Self-reference for the retry loop, held in a ref so `connectWithRetry` does
+  // not have to list itself as a dependency (and cannot read itself mid-declaration).
+  const connectWithRetryRef = useRef<(attempt?: number) => Promise<void>>(async () => {})
+
+  const connectWithRetry = useCallback(
+    async (attempt = 0): Promise<void> => {
+      setConnecting(true)
+      setSyncing(true)
+      setConnectionError(null)
+      try {
+        await ensureInit()
+        const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), CONNECT_TIMEOUT_MS),
+        )
+        const authPromise = StellarWalletsKit.authModal() as Promise<{ address: string }>
+        const { address: addr } = await Promise.race([authPromise, timeoutPromise])
+        let walletId = 'wallet'
+        try {
+          walletId = StellarWalletsKit.selectedModule?.productId ?? 'wallet'
+        } catch {
+          /* fallback */
+        }
+        setLastDisconnectReason(null)
+        setRetryCount(0)
+        persist(addr, walletId)
+        await readWalletNetwork()
+      } catch (e) {
+        const isTimeout = e instanceof Error && e.message === 'timeout'
+        const isCancelled = e instanceof Error && /dismiss|cancel|closed/i.test(e.message)
+        if (isCancelled) {
+          return
+        }
+        if (isTimeout && attempt < MAX_AUTO_RETRIES) {
+          setRetryCount(attempt + 1)
+          await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)))
+          return connectWithRetryRef.current(attempt + 1)
+        }
+        setConnectionError(
+          isTimeout
+            ? 'Connection timed out — please check your network and try again.'
+            : 'Could not connect to wallet — please try again.',
+        )
+      } finally {
+        setConnecting(false)
+        setSyncing(false)
+      }
+    },
+    [ensureInit, persist, readWalletNetwork],
+  )
+
+  // Publish the latest callback for the retry loop, after commit so the ref is
+  // never written during render.
+  useEffect(() => {
+    connectWithRetryRef.current = connectWithRetry
+  }, [connectWithRetry])
 
   const connect = useCallback(async () => {
     setRetryCount(0)
@@ -224,43 +258,64 @@ export function WalletProvider({ children }: {children: ReactNode}) {
   }, [connectWithRetry])
 
   const connectDemo = useCallback(() => {
-    setAddress(DEMO_ADDRESS)
-    setIsDemo(true)
+    setLastDisconnectReason(null)
     setConnectionError(null)
-    persist(DEMO_ADDRESS, 'demo')
+    persist(DEMO_ADDRESS, DEMO_WALLET_ID)
   }, [persist])
 
   const sign = useCallback(
-    async (xdr: string): Promise<string> => {
+    async (xdr: string, passphrase?: string): Promise<string> => {
       if (isDemo) throw new Error('demo')
-      await ensureInit()
-      const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
-      // Block before the wallet prompt: a mismatched network can only fail (#611).
-      const walletPassphrase = await readWalletNetwork()
-      if (isNetworkMismatch(walletPassphrase, appPassphrase)) {
-        throw new NetworkMismatchError(walletPassphrase!, appPassphrase)
+      setSyncing(true)
+      try {
+        await ensureInit()
+        const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
+        // A sign-in challenge may name its own network; only app transactions are
+        // guarded against a wallet/app network mismatch.
+        if (!passphrase) {
+          // Block before the wallet prompt: a mismatched network can only fail (#611).
+          const walletPassphrase = await readWalletNetwork()
+          if (isNetworkMismatch(walletPassphrase, appPassphrase)) {
+            throw new NetworkMismatchError(walletPassphrase!, appPassphrase)
+          }
+        }
+        const result = await StellarWalletsKit.signTransaction(xdr, {
+          networkPassphrase: passphrase ?? appPassphrase,
+          address: address ?? undefined,
+        })
+        return result.signedTxXdr
+      } finally {
+        setSyncing(false)
       }
-      const result = await StellarWalletsKit.signTransaction(xdr, {
-        networkPassphrase: appPassphrase,
-        address: address ?? undefined,
-      })
-      return result.signedTxXdr
     },
     [isDemo, ensureInit, address, appPassphrase, readWalletNetwork],
   )
 
-  const disconnect = useCallback(() => {
-    setAddress(null)
-    setIsDemo(false)
+  const signMessage = useCallback(
+    async (message: string): Promise<string> => {
+      if (isDemo) throw new Error('demo')
+      await ensureInit()
+      const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
+      const result = await StellarWalletsKit.signMessage(message, {
+        networkPassphrase: appPassphrase,
+        address: address ?? undefined,
+      })
+      return result.signedMessage
+    },
+    [isDemo, ensureInit, address, appPassphrase],
+  )
+
+  /**
+   * Ends the session. `reason` defaults to `'user'` because every current caller
+   * (Disconnect button, admin, session expiry) is deliberate; the offline banner
+   * uses this to stay quiet for those and warn only for unexpected drops (#595).
+   */
+  const disconnect = useCallback((reason: DisconnectReason = 'user') => {
+    setLastDisconnectReason(reason)
     setConnectionError(null)
     setRetryCount(0)
     setWalletNetworkPassphrase(null)
-    try {
-      localStorage.removeItem('hb-address')
-      localStorage.removeItem('hb-wallet')
-    } catch {
-      /* ignore */
-    }
+    clearSession()
     void import('@creit.tech/stellar-wallets-kit')
       .then(({ StellarWalletsKit }) => StellarWalletsKit.disconnect())
       .catch(() => {})
@@ -272,6 +327,7 @@ export function WalletProvider({ children }: {children: ReactNode}) {
         address,
         connected: address !== null,
         connecting,
+        syncing,
         isDemo,
         restoring,
         connectionError,
@@ -281,12 +337,14 @@ export function WalletProvider({ children }: {children: ReactNode}) {
         disconnect,
         retry,
         sign,
+        signMessage,
         network,
         setNetwork,
         walletNetworkPassphrase,
         networkMismatch:
           !isDemo && address !== null && isNetworkMismatch(walletNetworkPassphrase, appPassphrase),
         checkWalletNetwork,
+        lastDisconnectReason,
       }}
     >
       {children}

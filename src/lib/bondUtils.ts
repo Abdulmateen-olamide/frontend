@@ -1,12 +1,12 @@
 /*
  * Bond utilities -- addresses multiple bond-related issues:
-  *  - #364 filter persistence via URL + localStorage
-  *  - #363 case-insensitive search
-  *  - #359 stable sort with tie-breaker
-  *  - #361 bond comparison view data helper
-  *  - #367 projected return from an investment amount + annual yield
-  *  - #portfolio-risk show portfolio risk score based on bond ratings mix
-  *  - #historical-pricing display historical pricing for bonds to show trends
+ *  - #364 filter persistence via URL + localStorage
+ *  - #363 case-insensitive search
+ *  - #359 stable sort with tie-breaker
+ *  - #361 bond comparison view data helper
+ *  - #367 projected return from an investment amount + annual yield
+ *  - #portfolio-risk show portfolio risk score based on bond ratings mix
+ *  - #historical-pricing display historical pricing for bonds to show trends
  */
 
 export interface Bond {
@@ -29,7 +29,10 @@ const YIELD_DEFAULT: [number, number] = [0, 15]
 export function getPersistedYieldRange(): [number, number] {
   if (typeof window === 'undefined') return YIELD_DEFAULT
   try {
-    const url = new URL("window.location.href")
+    // Reads the live href. The previous literal string `'window.location.href'`
+    // was parsed as a relative URL and threw, so the query-string override was
+    // silently swallowed by the catch below and never applied.
+    const url = new URL(window.location.href)
     const fromUrl = url.searchParams.get('yieldRange')
     if (fromUrl) {
       const [min, max] = fromUrl.split('-').map(Number)
@@ -52,6 +55,65 @@ export function persistYieldRange(range: [number, number]): void {
     url.searchParams.set('yieldRange', `${range[0]}-${range[1]}`)
     window.history.replaceState(null, '', url.toString())
   } catch {}
+}
+
+let yieldRangeSnapshot: [number, number] = YIELD_DEFAULT
+const yieldRangeListeners = new Set<() => void>()
+
+/**
+ * Subscribes to the saved yield range, including changes made in another tab
+ * and changes to the `?yieldRange` query parameter.
+ *
+ * Exposed as an external store so `useBondFilters` can read it through
+ * `useSyncExternalStore` instead of copying storage into state from an effect
+ * (#598). The snapshot is cached and only recomputed on write or on a relevant
+ * external change, which keeps it referentially stable between renders.
+ */
+export function subscribeYieldRange(listener: () => void): () => void {
+  if (!yieldRangeListeners.size) yieldRangeSnapshot = getPersistedYieldRange()
+  yieldRangeListeners.add(listener)
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', onYieldRangeStorage)
+    document.addEventListener('visibilitychange', onYieldRangeVisible)
+  }
+  return () => {
+    yieldRangeListeners.delete(listener)
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', onYieldRangeStorage)
+      document.removeEventListener('visibilitychange', onYieldRangeVisible)
+    }
+  }
+}
+
+function republishYieldRange(): void {
+  yieldRangeSnapshot = getPersistedYieldRange()
+  yieldRangeListeners.forEach((listener) => listener())
+}
+
+function onYieldRangeStorage(event: StorageEvent): void {
+  if (event.key !== null && event.key !== YIELD_FILTER_KEY) return
+  republishYieldRange()
+}
+
+/** Another tab may have written the range while this one was in the background. */
+function onYieldRangeVisible(): void {
+  if (document.visibilityState === 'visible') republishYieldRange()
+}
+
+export function getYieldRange(): [number, number] {
+  return yieldRangeSnapshot
+}
+
+/** The default on the server, so the first client render matches the server HTML. */
+export function getServerYieldRange(): [number, number] {
+  return YIELD_DEFAULT
+}
+
+/** Saves a new range and notifies subscribers. */
+export function setYieldRange(range: [number, number]): void {
+  yieldRangeSnapshot = range
+  persistYieldRange(range)
+  yieldRangeListeners.forEach((listener) => listener())
 }
 
 export function filterBondsByYield(bonds: Bond[], range: [number, number]): Bond[] {
@@ -97,7 +159,7 @@ export function compareBondsMetrics(bonds: Bond[]): Record<string, (string | num
   const metrics = ['yield', 'term', 'rating', 'name'] as const
   const result: Record<string, (string | number)[]> = {}
   for (const m of metrics) {
-    result[m] = bonds.map((b) => (b as any)[m])
+    result[m] = bonds.map((b) => b[m])
   }
   return result
 }
@@ -150,7 +212,10 @@ export function getPortfolioRisk(bonds: Bond[]): PortfolioRisk {
 // In a real app replace this with an API call to fetch historical bond data.
 export function getBondHistory(bond: Bond, days = 30): BondHistoryPoint[] {
   if (days <= 0) return []
-  const seed = String(bond.id).split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0) || 1
+  const seed =
+    String(bond.id)
+      .split('')
+      .reduce((acc, ch) => acc + ch.charCodeAt(0), 0) || 1
   let s = seed
   const random = () => {
     s = (s * 9301 + 49297) % 233280

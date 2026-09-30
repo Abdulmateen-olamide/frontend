@@ -6,21 +6,29 @@
  */
 
 import { type Project, type ProjectType } from '../data'
-import {
-  type ProjectDetail,
-  type ScorePoint,
-} from '../data/projectDetails'
+import { type ProjectDetail, type ScorePoint } from '../data/projectDetails'
 import {
   selectProjects,
   selectProjectById,
   selectProjectDetail,
   selectScoreHistory,
 } from '../state/selectors'
-import { STELLAR_NETWORK, SOROBAN_RPC_URL as RPC_URL } from '../config/network'
+import { SOROBAN_RPC_URL as RPC_URL, NETWORK_PASSPHRASE, allowHttpFor } from '../config/network'
+import { reportError } from '../lib/errorReporting'
 
-const REGISTRY_CONTRACT_ID = process.env.NEXT_PUBLIC_REGISTRY_CONTRACT_ID
+function getRegistryContractId(): string | undefined {
+  return process.env.NEXT_PUBLIC_REGISTRY_CONTRACT_ID
+}
 
 const CACHE_TTL_MS = 30000
+
+/**
+ * Well-formed Ed25519 public key used as the source account for read-only
+ * registry simulations. Simulations are never submitted, so the account only
+ * has to be a valid G-address — it never needs to exist on-chain. Mirrors
+ * `DEMO_ADDRESS` in WalletProvider.tsx (#625).
+ */
+export const SIMULATION_SOURCE_ADDRESS = 'GCOQ4JRRUC7SBUXLKYXFCZPJWTKDFTULI6DOGB75DZNAVGIST3BNC6UX'
 
 interface CacheEntry<T> {
   data: T
@@ -49,74 +57,142 @@ export function clearRegistryCache(): void {
 
 /** Check if on-chain ProjectRegistry is configured */
 export function isRegistryConfigured(): boolean {
-  return Boolean(REGISTRY_CONTRACT_ID)
+  return Boolean(getRegistryContractId())
 }
 
 /** Simulate a read call on the ProjectRegistry contract */
-async function simulateRegistryCall(
+export async function defaultSimulateRegistryCall(
   method: string,
   args: unknown[] = [],
-  sourceAddress = 'GBQHWXVZ2K4M6N8P3R5T7W9YA2C4E6G8J3L5Q7S9U2X4Z6B8D1F3H59XQ',
+  sourceAddress = SIMULATION_SOURCE_ADDRESS,
 ): Promise<unknown> {
-  if (!REGISTRY_CONTRACT_ID) throw new Error('NEXT_PUBLIC_REGISTRY_CONTRACT_ID not set')
+  const contractId = getRegistryContractId()
+  if (!contractId) throw new Error('NEXT_PUBLIC_REGISTRY_CONTRACT_ID not set')
 
-  const { rpc, Contract, TransactionBuilder, Networks, Account, nativeToScVal, scValToNative } =
+  const { rpc, Contract, TransactionBuilder, Account, nativeToScVal, scValToNative } =
     await import('@stellar/stellar-sdk')
 
-  const server = new rpc.Server(RPC_URL, { allowHttp: false })
-  const contract = new Contract(REGISTRY_CONTRACT_ID)
+  const server = new rpc.Server(RPC_URL, { allowHttp: allowHttpFor(RPC_URL) })
+  const contract = new Contract(contractId)
   const source = new Account(sourceAddress, '0')
-  const networkPassphrase =
-    STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
+  // Honour NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE (local quickstart) via config.
+  const networkPassphrase = NETWORK_PASSPHRASE
 
-  const buildArgs = (useU32: boolean) =>
-    args.map((a) => {
-      if (a && typeof a === 'object' && typeof (a as { switch?: unknown }).switch === 'function') {
-        return a
-      }
-      if (typeof a === 'number' && Number.isInteger(a) && a >= 0 && a <= 4294967295) {
-        return useU32
-          ? nativeToScVal(a, { type: 'u32' })
-          : nativeToScVal(BigInt(a), { type: 'u64' })
-      }
-      return nativeToScVal(a)
-    })
-
-  let lastError: unknown = null
-  for (const useU32 of [true, false]) {
-    try {
-      const scArgs = buildArgs(useU32)
-      const tx = new TransactionBuilder(source, { fee: '100', networkPassphrase })
-        .addOperation(contract.call(method, ...(scArgs as Parameters<typeof contract.call>[1][])))
-        .setTimeout(0)
-        .build()
-
-      const simResult = await server.simulateTransaction(tx)
-      if ('error' in simResult) {
-        lastError = simResult.error
-        continue
-      }
-      if (simResult.result?.retval) {
-        return scValToNative(simResult.result.retval)
-      }
-    } catch (e) {
-      lastError = e
+  // Registry IDs, offsets and limits are all u32 in the contract ABI (#625).
+  const scArgs = args.map((a) => {
+    if (a && typeof a === 'object' && typeof (a as { switch?: unknown }).switch === 'function') {
+      return a
     }
-  }
+    if (typeof a === 'number' && Number.isInteger(a) && a >= 0 && a <= 4294967295) {
+      return nativeToScVal(a, { type: 'u32' })
+    }
+    return nativeToScVal(a)
+  })
 
-  throw new Error(`Simulate failed for ${method}: ${lastError}`)
+  const tx = new TransactionBuilder(source, { fee: '100', networkPassphrase })
+    .addOperation(contract.call(method, ...(scArgs as Parameters<typeof contract.call>[1][])))
+    .setTimeout(0)
+    .build()
+
+  const simResult = await server.simulateTransaction(tx)
+  if ('error' in simResult) {
+    throw new Error(`Simulate failed for ${method}: ${simResult.error}`)
+  }
+  if (!simResult.result?.retval) {
+    throw new Error(`Simulate failed for ${method}: empty simulation result`)
+  }
+  return scValToNative(simResult.result.retval)
 }
 
-/** Compute hex SHA-256 hash in browser or Node environments */
-async function computeSha256(content: string): Promise<string> {
-  if (typeof crypto !== 'undefined' && crypto.subtle) {
-    const encoder = new TextEncoder()
-    const data = encoder.encode(content)
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-    const hashArray = Array.from(new Uint8Array(hashBuffer))
-    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
+/**
+ * True for caller/programming mistakes (invalid source address, undecodable
+ * args) that must surface instead of being hidden behind demo fixtures (#625).
+ */
+function isProgrammingError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error)
+  return (
+    msg.includes('accountId is invalid') ||
+    msg.includes('Invalid address') ||
+    msg.includes('invalid address') ||
+    msg.includes('Malformed') ||
+    msg.includes('malformed') ||
+    msg.includes('not a valid')
+  )
+}
+
+/** Report a failed on-chain registry read before any fixture fallback (#625). */
+function reportRegistryReadError(method: string, error: unknown): void {
+  reportError(error, { kind: 'transaction', context: { target: 'registry', method } })
+}
+
+export type RegistrySimulator = (
+  method: string,
+  args?: unknown[],
+  sourceAddress?: string,
+) => Promise<unknown>
+
+let activeSimulateRegistryCall: RegistrySimulator = defaultSimulateRegistryCall
+
+export function setSimulateRegistryCall(fn: RegistrySimulator): void {
+  activeSimulateRegistryCall = fn
+}
+
+export function resetSimulateRegistryCall(): void {
+  activeSimulateRegistryCall = defaultSimulateRegistryCall
+}
+
+export async function simulateRegistryCall(
+  method: string,
+  args: unknown[] = [],
+  sourceAddress?: string,
+): Promise<unknown> {
+  return activeSimulateRegistryCall(method, args, sourceAddress)
+}
+
+/** Compute hex SHA-256 hash in browser or Node environments.
+ * Returns null if crypto.subtle is unavailable (e.g. non-secure context).
+ */
+export async function computeSha256(content: ArrayBuffer | Uint8Array): Promise<string | null> {
+  const subtle = typeof crypto !== 'undefined' ? crypto.subtle : undefined
+  if (!subtle) {
+    return null
   }
-  return ''
+  const data = content instanceof Uint8Array ? content : new Uint8Array(content)
+  const hashBuffer = await subtle.digest('SHA-256', data as BufferSource)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .toLowerCase()
+}
+
+/**
+ * Normalizes an on-chain metadata hash into a 64-character lowercase hex string.
+ * Returns null if missing, empty, or not a valid 32-byte representation.
+ */
+export function normalizeHash(
+  rawHash: string | Uint8Array | number[] | undefined | null,
+): string | null {
+  if (!rawHash) return null
+  if (typeof rawHash === 'string') {
+    const trimmed = rawHash.trim()
+    const clean = trimmed.startsWith('0x') || trimmed.startsWith('0X') ? trimmed.slice(2) : trimmed
+    if (/^[0-9a-fA-F]{64}$/.test(clean)) {
+      return clean.toLowerCase()
+    }
+    return null
+  }
+  if (rawHash instanceof Uint8Array || Array.isArray(rawHash)) {
+    const arr = Array.from(rawHash)
+    if (arr.length === 32) {
+      return arr
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('')
+        .toLowerCase()
+    }
+    return null
+  }
+  return null
 }
 
 export interface OnChainProjectRaw {
@@ -143,10 +219,7 @@ export interface OffChainMetadata {
 }
 
 /** Map on-chain project struct and optional metadata to UI Project */
-export function mapOnChainProject(
-  raw: OnChainProjectRaw,
-  metadata?: OffChainMetadata,
-): Project {
+export function mapOnChainProject(raw: OnChainProjectRaw, metadata?: OffChainMetadata): Project {
   const id = Number(raw.id)
   const credit = Number(raw.credit_score ?? 80)
   const green = Number(raw.green_score ?? 80)
@@ -178,7 +251,7 @@ export async function fetchTotalProjects(sourceAddress?: string): Promise<number
   const cached = getFromCache<number>(cacheKey)
   if (cached !== null) return cached
 
-  if (!REGISTRY_CONTRACT_ID) {
+  if (!getRegistryContractId()) {
     return selectProjects().length
   }
 
@@ -187,7 +260,9 @@ export async function fetchTotalProjects(sourceAddress?: string): Promise<number
     const total = Number(retval)
     setInCache(cacheKey, total)
     return total
-  } catch {
+  } catch (error) {
+    reportRegistryReadError('total_projects', error)
+    if (isProgrammingError(error)) throw error
     return selectProjects().length
   }
 }
@@ -208,7 +283,7 @@ export async function fetchProjectsPage(
   const cached = getFromCache<ProjectsPageResult>(cacheKey)
   if (cached !== null) return cached
 
-  if (!REGISTRY_CONTRACT_ID) {
+  if (!getRegistryContractId()) {
     const all = selectProjects()
     const slice = all.slice(offset, offset + limit)
     const result: ProjectsPageResult = {
@@ -235,7 +310,9 @@ export async function fetchProjectsPage(
     }
     setInCache(cacheKey, result)
     return result
-  } catch {
+  } catch (error) {
+    reportRegistryReadError('get_projects_page', error)
+    if (isProgrammingError(error)) throw error
     const all = selectProjects()
     const slice = all.slice(offset, offset + limit)
     return {
@@ -246,10 +323,12 @@ export async function fetchProjectsPage(
   }
 }
 
+export type MetadataVerificationStatus = 'verified' | 'mismatch' | 'unverified'
+
 export interface ProjectWithVerification {
   project: Project
   detail: ProjectDetail
-  verifiedMetadata: boolean
+  verifiedMetadata: MetadataVerificationStatus
 }
 
 /** Read single project and verify metadata hash */
@@ -264,12 +343,12 @@ export async function fetchProjectWithDetails(
   const fallbackProject = selectProjectById(id)
   const fallbackDetail = selectProjectDetail(id)
 
-  if (!REGISTRY_CONTRACT_ID) {
+  if (!getRegistryContractId()) {
     if (!fallbackProject || !fallbackDetail) return null
     return {
       project: fallbackProject,
       detail: fallbackDetail,
-      verifiedMetadata: true,
+      verifiedMetadata: 'unverified',
     }
   }
 
@@ -285,47 +364,60 @@ export async function fetchProjectWithDetails(
       return {
         project: fallbackProject,
         detail: fallbackDetail,
-        verifiedMetadata: false,
+        verifiedMetadata: 'unverified',
       }
     }
 
-    let verifiedMetadata = false
+    let verifiedMetadata: MetadataVerificationStatus = 'unverified'
     let offChainMetadata: OffChainMetadata | undefined
 
     if (raw.metadata_uri) {
       try {
         const res = await fetch(raw.metadata_uri)
         if (res.ok) {
-          const text = await res.text()
-          offChainMetadata = JSON.parse(text)
-          if (raw.metadata_hash) {
-            const computedHash = await computeSha256(text)
-            const expected =
-              typeof raw.metadata_hash === 'string'
-                ? raw.metadata_hash
-                : Array.from(raw.metadata_hash)
-                    .map((b) => b.toString(16).padStart(2, '0'))
-                    .join('')
-            verifiedMetadata = computedHash.toLowerCase() === expected.toLowerCase()
+          const rawBytes = await res.arrayBuffer()
+          const expected = normalizeHash(raw.metadata_hash)
+
+          if (expected) {
+            const computedHash = await computeSha256(rawBytes)
+            if (computedHash === null) {
+              // crypto.subtle is unavailable (non-secure context) -> unverified
+              verifiedMetadata = 'unverified'
+            } else if (computedHash.toLowerCase() !== expected.toLowerCase()) {
+              // Computed hash differs from on-chain hash -> mismatch
+              verifiedMetadata = 'mismatch'
+            } else {
+              // Hash matched on-chain hash! Parse JSON payload.
+              try {
+                const text = new TextDecoder().decode(rawBytes)
+                offChainMetadata = JSON.parse(text)
+                verifiedMetadata = 'verified'
+              } catch {
+                // Parse failure on correctly hashed content fails closed to unverified
+                verifiedMetadata = 'unverified'
+              }
+            }
           } else {
-            verifiedMetadata = true
+            // Missing or malformed on-chain metadata_hash -> unverified
+            verifiedMetadata = 'unverified'
+            try {
+              const text = new TextDecoder().decode(rawBytes)
+              offChainMetadata = JSON.parse(text)
+            } catch {
+              // Ignore parse error when hash is missing
+            }
           }
+        } else {
+          // HTTP error response from metadata host -> unverified
+          verifiedMetadata = 'unverified'
         }
       } catch {
-        /* fallback to on-chain verification method */
-        try {
-          const verifyResult = await simulateRegistryCall(
-            'verify_metadata_hash',
-            [id, raw.metadata_hash],
-            sourceAddress,
-          )
-          verifiedMetadata = Boolean(verifyResult)
-        } catch {
-          verifiedMetadata = true
-        }
+        // Network or fetch failure -> unverified
+        verifiedMetadata = 'unverified'
       }
     } else {
-      verifiedMetadata = true
+      // Missing metadata_uri -> unverified
+      verifiedMetadata = 'unverified'
     }
 
     const project = mapOnChainProject(raw, offChainMetadata)
@@ -372,12 +464,14 @@ export async function fetchProjectWithDetails(
 
     setInCache(cacheKey, result)
     return result
-  } catch {
+  } catch (error) {
+    reportRegistryReadError('get_project', error)
+    if (isProgrammingError(error)) throw error
     if (!fallbackProject || !fallbackDetail) return null
     return {
       project: fallbackProject,
       detail: fallbackDetail,
-      verifiedMetadata: true,
+      verifiedMetadata: 'unverified',
     }
   }
 }
@@ -391,16 +485,18 @@ export async function fetchScoreHistory(
   const cached = getFromCache<{ credit: ScorePoint[]; green: ScorePoint[] }>(cacheKey)
   if (cached !== null) return cached
 
-  if (!REGISTRY_CONTRACT_ID) {
+  if (!getRegistryContractId()) {
     return selectScoreHistory(id)
   }
 
   try {
-    const raw = (await simulateRegistryCall(
-      'get_score_history',
-      [id],
-      sourceAddress,
-    )) as Array<{ date?: string; timestamp?: number; credit: number; green: number; hash?: string }>
+    const raw = (await simulateRegistryCall('get_score_history', [id], sourceAddress)) as Array<{
+      date?: string
+      timestamp?: number
+      credit: number
+      green: number
+      hash?: string
+    }>
 
     if (Array.isArray(raw) && raw.length > 0) {
       const credit: ScorePoint[] = raw.map((r, i) => ({
@@ -418,7 +514,9 @@ export async function fetchScoreHistory(
       return history
     }
     return selectScoreHistory(id)
-  } catch {
+  } catch (error) {
+    reportRegistryReadError('get_score_history', error)
+    if (isProgrammingError(error)) throw error
     return selectScoreHistory(id)
   }
 }
