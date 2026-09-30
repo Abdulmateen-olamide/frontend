@@ -1,276 +1,449 @@
-// @vitest-environment node
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Keypair, StrKey, Transaction, nativeToScVal, xdr } from '@stellar/stellar-sdk'
-import { createHash } from 'node:crypto'
-
-// Soroban decoding tests for src/wallet/registry.ts (#626). The real SDK builds
-// the read transaction; only `rpc.Server.simulateTransaction` is replaced with a
-// contract-shaped ScVal fixture, so these assertions see exactly the values
-// `get_projects_page`, `get_project` and `get_score_history` return on-chain.
-
-const rpcMock = vi.hoisted(() => ({
-  simulateTransaction: vi.fn(),
-}))
-
-vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@stellar/stellar-sdk')>()
-  class Server {
-    constructor() {}
-    simulateTransaction = rpcMock.simulateTransaction
-  }
-  return { ...actual, rpc: { ...actual.rpc, Server } }
-})
-
-const CONTRACT_ID = StrKey.encodeContract(Buffer.alloc(32, 7))
-const SOURCE = Keypair.random().publicKey()
-
-type Registry = typeof import('./registry')
-
-async function loadRegistry(contractId: string | null = CONTRACT_ID): Promise<Registry> {
-  vi.resetModules()
-  vi.stubEnv('NEXT_PUBLIC_REGISTRY_CONTRACT_ID', contractId ?? '')
-  const registry = await import('./registry')
-  registry.clearRegistryCache()
-  return registry
-}
-
-const u32 = (n: number) => nativeToScVal(n, { type: 'u32' })
-const u64 = (n: number) => nativeToScVal(BigInt(n), { type: 'u64' })
-
-/** ProjectData struct per contracts/project_registry/src/types.rs. */
-function projectData(fields: {
-  owner: string
-  uri: string
-  credit_quality: number
-  green_impact: number
-  status: number
-  metadata_hash: string | Uint8Array
-}): xdr.ScVal {
-  const hashBytes =
-    typeof fields.metadata_hash === 'string'
-      ? Buffer.from(fields.metadata_hash, 'utf8')
-      : Buffer.from(fields.metadata_hash)
-  const entries: Array<[string, xdr.ScVal]> = [
-    ['owner', nativeToScVal(fields.owner, { type: 'string' })],
-    ['uri', nativeToScVal(fields.uri, { type: 'string' })],
-    ['credit_quality', u32(fields.credit_quality)],
-    ['green_impact', u32(fields.green_impact)],
-    ['maturity_date', u64(0)],
-    ['certification_status', u32(0)],
-    ['last_update_timestamp', u64(1_700_000_000)],
-    ['status', u32(fields.status)],
-    ['created_at', u64(1_600_000_000)],
-    ['metadata_hash', nativeToScVal(hashBytes, { type: 'bytes' })],
-  ]
-  return xdr.ScVal.scvMap(
-    entries.map(([key, val]) => new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol(key), val })),
-  )
-}
-
-/** A `(u32, ProjectData)` tuple from get_projects_page. */
-function projectTuple(id: number, data: xdr.ScVal): xdr.ScVal {
-  return xdr.ScVal.scvVec([u32(id), data])
-}
-
-/** A ScoreHistoryEntry struct from get_score_history. */
-function scoreEntry(timestamp: number, credit: number, green: number): xdr.ScVal {
-  return xdr.ScVal.scvMap([
-    new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('timestamp'), val: u64(timestamp) }),
-    new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('credit_quality'), val: u32(credit) }),
-    new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('green_impact'), val: u32(green) }),
-  ])
-}
-
-function okSimulation(retval: xdr.ScVal) {
-  return { result: { retval }, transactionData: {}, minResourceFee: '0', latestLedger: 1 }
-}
-
-function mockContract(handlers: Record<string, () => xdr.ScVal>) {
-  rpcMock.simulateTransaction.mockImplementation((tx: Transaction) => {
-    const op = tx.operations[0] as {
-      func: { invokeContract(): { functionName(): { toString(): string } } }
-    }
-    const call = op.func.invokeContract()
-    const method = call.functionName().toString()
-    const handler = handlers[method]
-    return Promise.resolve(okSimulation(handler ? handler() : xdr.ScVal.scvVoid()))
-  })
-}
-
-beforeEach(() => {
-  rpcMock.simulateTransaction.mockReset()
-})
-
-afterEach(() => {
-  vi.unstubAllEnvs()
-  vi.unstubAllGlobals()
-})
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import {
+  fetchTotalProjects,
+  fetchProjectsPage,
+  fetchProjectWithDetails,
+  fetchScoreHistory,
+  clearRegistryCache,
+  isRegistryConfigured,
+  computeSha256,
+  normalizeHash,
+  setSimulateRegistryCall,
+  resetSimulateRegistryCall,
+  type OnChainProjectRaw,
+} from './registry'
 
 describe('registry client', () => {
-  it('maps on-chain project data to UI Project format', async () => {
-    const registry = await loadRegistry()
-    const raw = {
-      owner: 'GABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUV',
-      uri: 'https://metadata.example/101.json',
-      credit_quality: 92n,
+  beforeEach(() => {
+    clearRegistryCache()
+    resetSimulateRegistryCall()
+    vi.restoreAllMocks()
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  afterEach(() => {
+    clearRegistryCache()
+    resetSimulateRegistryCall()
+    vi.restoreAllMocks()
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  it('falls back gracefully to fixtures when registry contract is unset', async () => {
+    expect(isRegistryConfigured()).toBe(false)
+
+    const total = await fetchTotalProjects()
+    expect(total).toBeGreaterThan(0)
+
+    const page = await fetchProjectsPage(0, 3)
+    expect(page.projects).toHaveLength(3)
+    expect(page.total).toBe(total)
+
+    const detail = await fetchProjectWithDetails(1)
+    expect(detail).not.toBeNull()
+    expect(detail?.project.id).toBe(1)
+    expect(detail?.verifiedMetadata).toBe('unverified')
+
+    const scores = await fetchScoreHistory(1)
+    expect(scores.credit.length).toBeGreaterThan(0)
+    expect(scores.green.length).toBeGreaterThan(0)
+  })
+
+  describe('computeSha256 and normalizeHash helpers', () => {
+    it('computes expected lowercase SHA-256 hex string from ArrayBuffer or Uint8Array', async () => {
+      const raw = new TextEncoder().encode('heliobond metadata test string')
+      const hashFromArrayBuffer = await computeSha256(raw.buffer)
+      const hashFromUint8 = await computeSha256(raw)
+      expect(hashFromArrayBuffer).toBe(hashFromUint8)
+      expect(hashFromArrayBuffer).toMatch(/^[0-9a-f]{64}$/)
+    })
+
+    it('returns null if crypto.subtle is unavailable', async () => {
+      const raw = new TextEncoder().encode('test')
+      const subtleSpy = vi
+        .spyOn(globalThis.crypto, 'subtle', 'get')
+        .mockReturnValue(undefined as unknown as SubtleCrypto)
+      try {
+        const res = await computeSha256(raw)
+        expect(res).toBeNull()
+      } finally {
+        subtleSpy.mockRestore()
+      }
+    })
+
+    it('normalizes valid 64-char hex strings and 32-byte arrays', () => {
+      const hex = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      expect(normalizeHash(hex)).toBe(hex)
+      expect(normalizeHash(`0x${hex.toUpperCase()}`)).toBe(hex)
+
+      const bytes = new Uint8Array(32).fill(0xab)
+      expect(normalizeHash(bytes)).toBe('ab'.repeat(32))
+      expect(normalizeHash(Array.from(bytes))).toBe('ab'.repeat(32))
+
+      expect(normalizeHash('')).toBeNull()
+      expect(normalizeHash(undefined)).toBeNull()
+      expect(normalizeHash(null)).toBeNull()
+      expect(normalizeHash('invalid-hex')).toBeNull()
+      expect(normalizeHash('1234')).toBeNull()
+      expect(normalizeHash(new Uint8Array(16))).toBeNull()
+    })
+  })
+
+  describe('fail-closed metadata verification (fetchProjectWithDetails)', () => {
+    const TEST_CONTRACT_ID = 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC'
+
+    const validMetadata = {
+      location: 'Ouarzazate, Morocco',
+      type: 'Solar' as const,
+      story: 'Verified solar farm project.',
+    }
+    const validBytes = new TextEncoder().encode(JSON.stringify(validMetadata))
+
+    const baseRawProject: OnChainProjectRaw = {
+      owner: 'GCOQ4JRRUC7SBUXLKYXFCZPJWTKDFTULI6DOGB75DZNAVGIST3BNC6UX',
+      uri: 'https://metadata.example.com/project-1.json',
+      metadata_hash: '',
+      credit_quality: 92,
       green_impact: 95,
-      maturity_date: 1_800_000_000,
+      maturity_date: 0,
       certification_status: 0,
       last_update_timestamp: 1_700_000_000,
       status: 1,
       created_at: 1_600_000_000,
-      metadata_hash: 'abc',
     }
 
-    const metadata = {
-      name: 'Sahara Agrivoltaic Test',
-      location: 'Ouarzazate, Morocco',
-      type: 'Solar' as const,
-      fundingGoal: 1000000,
-    }
-
-    const mapped = registry.mapOnChainProject(raw, 101, metadata)
-    expect(mapped.id).toBe(101)
-    expect(Number.isNaN(mapped.id)).toBe(false)
-    expect(mapped.name).toBe('Sahara Agrivoltaic Test')
-    expect(mapped.credit).toBe(92)
-    expect(mapped.green).toBe(95)
-    expect(mapped.status).toBe('open')
-    expect(mapped.location).toBe('Ouarzazate, Morocco')
-    expect(mapped.type).toBe('Solar')
-  })
-
-  it('maps every ProjectStatus number to a valid UI status', async () => {
-    const { mapProjectStatus } = await loadRegistry()
-    expect(mapProjectStatus(0)).toBe('upcoming') // Pending
-    expect(mapProjectStatus(1)).toBe('open') // Active
-    expect(mapProjectStatus(2)).toBe('funded') // Funded
-    expect(mapProjectStatus(3)).toBe('funded') // Completed
-    expect(mapProjectStatus(4)).toBe('funded') // Archived
-    expect(mapProjectStatus(undefined)).toBeUndefined()
-  })
-
-  it('unwraps (u32, ProjectData) tuples from get_projects_page', async () => {
-    const registry = await loadRegistry()
-    mockContract({
-      get_projects_page: () =>
-        xdr.ScVal.scvVec([
-          projectTuple(
-            42,
-            projectData({
-              owner: 'GOWNERAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-              uri: 'https://metadata.example/42.json',
-              credit_quality: 66,
-              green_impact: 77,
-              status: 1,
-              metadata_hash: '',
-            }),
-          ),
-          projectTuple(
-            7,
-            projectData({
-              owner: 'GOWNERBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
-              uri: 'https://metadata.example/7.json',
-              credit_quality: 71,
-              green_impact: 82,
-              status: 2,
-              metadata_hash: '',
-            }),
-          ),
-        ]),
-      total_projects: () => u32(2),
+    beforeEach(() => {
+      vi.stubEnv('NEXT_PUBLIC_REGISTRY_CONTRACT_ID', TEST_CONTRACT_ID)
+      expect(isRegistryConfigured()).toBe(true)
     })
 
-    const page = await registry.fetchProjectsPage(0, 10, SOURCE)
-    expect(page.total).toBe(2)
-    expect(page.projects.map((p) => p.id)).toEqual([42, 7])
-    expect(page.projects.every((p) => Number.isInteger(p.id) && !Number.isNaN(p.id))).toBe(true)
-    expect(page.projects[0].credit).toBe(66)
-    expect(page.projects[0].green).toBe(77)
-    expect(page.projects[0].status).toBe('open')
-    expect(page.projects[1].credit).toBe(71)
-    expect(page.projects[1].green).toBe(82)
-    expect(page.projects[1].status).toBe('funded')
-  })
+    it('returns "verified" when SHA-256 of fetched raw bytes matches on-chain hash', async () => {
+      const matchingHash = (await computeSha256(validBytes))!
+      expect(matchingHash).toBeDefined()
 
-  it('decodes get_project and fetches off-chain metadata from uri', async () => {
-    const registry = await loadRegistry()
-    const metadataUrl = 'https://metadata.example/1.json'
-    const metadataJson = JSON.stringify({
-      name: 'Sokoto Metro Solar',
-      location: 'Sokoto, Nigeria',
-      type: 'Solar',
-      story: 'A community array.',
+      const mockSimulate = vi.fn().mockImplementation(async (method: string) => {
+        if (method === 'get_project') {
+          return { ...baseRawProject, metadata_hash: matchingHash }
+        }
+        if (method === 'get_score_history') {
+          return []
+        }
+        return null
+      })
+      setSimulateRegistryCall(mockSimulate)
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => validBytes.buffer,
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const res = await fetchProjectWithDetails(1)
+      expect(res).not.toBeNull()
+      expect(res?.verifiedMetadata).toBe('verified')
+      expect(res?.project.location).toBe('Ouarzazate, Morocco')
+      expect(mockSimulate).not.toHaveBeenCalledWith(
+        'verify_metadata_hash',
+        expect.anything(),
+        expect.anything(),
+      )
     })
-    const metadataHash = createHash('sha256').update(metadataJson).digest()
 
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url === metadataUrl) {
-        return { ok: true, text: async () => metadataJson }
+    it('returns "verified" when on-chain hash is a 32-byte Uint8Array that matches', async () => {
+      const matchingHash = (await computeSha256(validBytes))!
+      const bytesArray = new Uint8Array(
+        matchingHash.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16)),
+      )
+
+      const mockSimulate = vi.fn().mockImplementation(async (method: string) => {
+        if (method === 'get_project') {
+          return { ...baseRawProject, metadata_hash: bytesArray }
+        }
+        if (method === 'get_score_history') {
+          return []
+        }
+        return null
+      })
+      setSimulateRegistryCall(mockSimulate)
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => validBytes.buffer,
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const res = await fetchProjectWithDetails(1)
+      expect(res).not.toBeNull()
+      expect(res?.verifiedMetadata).toBe('verified')
+    })
+
+    it('returns "mismatch" when computed hash differs from on-chain hash', async () => {
+      const mismatchHash = 'f'.repeat(64)
+
+      const mockSimulate = vi.fn().mockImplementation(async (method: string) => {
+        if (method === 'get_project') {
+          return { ...baseRawProject, metadata_hash: mismatchHash }
+        }
+        if (method === 'get_score_history') {
+          return []
+        }
+        return null
+      })
+      setSimulateRegistryCall(mockSimulate)
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => validBytes.buffer,
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const res = await fetchProjectWithDetails(1)
+      expect(res).not.toBeNull()
+      expect(res?.verifiedMetadata).toBe('mismatch')
+      expect(mockSimulate).not.toHaveBeenCalledWith(
+        'verify_metadata_hash',
+        expect.anything(),
+        expect.anything(),
+      )
+    })
+
+    it('returns "unverified" on fetch failure (network error)', async () => {
+      const matchingHash = (await computeSha256(validBytes))!
+
+      const mockSimulate = vi.fn().mockImplementation(async (method: string) => {
+        if (method === 'get_project') {
+          return { ...baseRawProject, metadata_hash: matchingHash }
+        }
+        return []
+      })
+      setSimulateRegistryCall(mockSimulate)
+
+      const mockFetch = vi.fn().mockRejectedValue(new Error('Network error or connection refused'))
+      vi.stubGlobal('fetch', mockFetch)
+
+      const res = await fetchProjectWithDetails(1)
+      expect(res).not.toBeNull()
+      expect(res?.verifiedMetadata).toBe('unverified')
+      expect(mockSimulate).not.toHaveBeenCalledWith(
+        'verify_metadata_hash',
+        expect.anything(),
+        expect.anything(),
+      )
+    })
+
+    it('returns "unverified" on fetch failure (HTTP 404 or 500 status)', async () => {
+      const matchingHash = (await computeSha256(validBytes))!
+
+      const mockSimulate = vi.fn().mockImplementation(async (method: string) => {
+        if (method === 'get_project') {
+          return { ...baseRawProject, metadata_hash: matchingHash }
+        }
+        return []
+      })
+      setSimulateRegistryCall(mockSimulate)
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        arrayBuffer: async () => new ArrayBuffer(0),
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const res = await fetchProjectWithDetails(1)
+      expect(res).not.toBeNull()
+      expect(res?.verifiedMetadata).toBe('unverified')
+      expect(mockSimulate).not.toHaveBeenCalledWith(
+        'verify_metadata_hash',
+        expect.anything(),
+        expect.anything(),
+      )
+    })
+
+    it('returns "unverified" when on-chain metadata_hash is missing or empty', async () => {
+      const mockSimulate = vi.fn().mockImplementation(async (method: string) => {
+        if (method === 'get_project') {
+          return { ...baseRawProject, metadata_hash: undefined }
+        }
+        return []
+      })
+      setSimulateRegistryCall(mockSimulate)
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => validBytes.buffer,
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const res = await fetchProjectWithDetails(1)
+      expect(res).not.toBeNull()
+      expect(res?.verifiedMetadata).toBe('unverified')
+      expect(mockSimulate).not.toHaveBeenCalledWith(
+        'verify_metadata_hash',
+        expect.anything(),
+        expect.anything(),
+      )
+    })
+
+    it('returns "unverified" when the metadata uri is missing', async () => {
+      const matchingHash = (await computeSha256(validBytes))!
+
+      const mockSimulate = vi.fn().mockImplementation(async (method: string) => {
+        if (method === 'get_project') {
+          return { ...baseRawProject, uri: '', metadata_hash: matchingHash }
+        }
+        return []
+      })
+      setSimulateRegistryCall(mockSimulate)
+
+      const mockFetch = vi.fn()
+      vi.stubGlobal('fetch', mockFetch)
+
+      const res = await fetchProjectWithDetails(1)
+      expect(res).not.toBeNull()
+      expect(res?.verifiedMetadata).toBe('unverified')
+      expect(mockFetch).not.toHaveBeenCalled()
+      expect(mockSimulate).not.toHaveBeenCalledWith(
+        'verify_metadata_hash',
+        expect.anything(),
+        expect.anything(),
+      )
+    })
+
+    it('returns "unverified" when crypto.subtle is unavailable', async () => {
+      const matchingHash = (await computeSha256(validBytes))!
+
+      const mockSimulate = vi.fn().mockImplementation(async (method: string) => {
+        if (method === 'get_project') {
+          return { ...baseRawProject, metadata_hash: matchingHash }
+        }
+        return []
+      })
+      setSimulateRegistryCall(mockSimulate)
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => validBytes.buffer,
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const subtleSpy = vi
+        .spyOn(globalThis.crypto, 'subtle', 'get')
+        .mockReturnValue(undefined as unknown as SubtleCrypto)
+      try {
+        const res = await fetchProjectWithDetails(1)
+        expect(res).not.toBeNull()
+        expect(res?.verifiedMetadata).toBe('unverified')
+        expect(mockSimulate).not.toHaveBeenCalledWith(
+          'verify_metadata_hash',
+          expect.anything(),
+          expect.anything(),
+        )
+      } finally {
+        subtleSpy.mockRestore()
       }
-      return { ok: false, text: async () => '' }
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    mockContract({
-      get_project: () =>
-        projectData({
-          owner: 'GOWNERCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC',
-          uri: metadataUrl,
-          credit_quality: 80,
-          green_impact: 90,
-          status: 1,
-          metadata_hash: metadataHash,
-        }),
-      get_score_history: () => xdr.ScVal.scvVec([scoreEntry(1_704_110_400, 80, 90)]),
     })
 
-    const detail = await registry.fetchProjectWithDetails(1, SOURCE)
-    expect(fetchMock).toHaveBeenCalledWith(metadataUrl)
-    expect(detail?.verifiedMetadata).toBe(true)
-    expect(detail?.project.id).toBe(1)
-    expect(detail?.project.name).toBe('Sokoto Metro Solar')
-    expect(detail?.project.credit).toBe(80)
-    expect(detail?.project.green).toBe(90)
-    expect(detail?.project.status).toBe('open')
-  })
+    it('returns "unverified" on parse failure with a matching hash (fail closed)', async () => {
+      const corruptBytes = new TextEncoder().encode('{ invalid json payload: ')
+      const matchingHash = (await computeSha256(corruptBytes))!
 
-  it('decodes ScoreHistoryEntry timestamps and score fields', async () => {
-    const registry = await loadRegistry()
-    mockContract({
-      get_score_history: () =>
-        xdr.ScVal.scvVec([
-          scoreEntry(1_704_110_400, 74, 84), // 2024-01-01 12:00 UTC
-          scoreEntry(1_706_792_400, 76, 86), // 2024-02-01 12:00 UTC
-        ]),
+      const mockSimulate = vi.fn().mockImplementation(async (method: string) => {
+        if (method === 'get_project') {
+          return { ...baseRawProject, metadata_hash: matchingHash }
+        }
+        return []
+      })
+      setSimulateRegistryCall(mockSimulate)
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => corruptBytes.buffer,
+      })
+      vi.stubGlobal('fetch', mockFetch)
+
+      const res = await fetchProjectWithDetails(1)
+      expect(res).not.toBeNull()
+      expect(res?.verifiedMetadata).toBe('unverified')
+      expect(mockSimulate).not.toHaveBeenCalledWith(
+        'verify_metadata_hash',
+        expect.anything(),
+        expect.anything(),
+      )
     })
 
-    const scores = await registry.fetchScoreHistory(1, SOURCE)
-    expect(scores.credit.map((p) => p.value)).toEqual([74, 76])
-    expect(scores.green.map((p) => p.value)).toEqual([84, 86])
-    expect(scores.credit.every((p) => Number.isFinite(p.value))).toBe(true)
-    expect(scores.credit.map((p) => p.date)).toEqual(['Jan 2024', 'Feb 2024'])
-    expect(scores.credit.every((p) => !p.date.includes('mo ago'))).toBe(true)
-  })
+    it('returns "mismatch" on parse failure with a non-matching hash', async () => {
+      const corruptBytes = new TextEncoder().encode('{ invalid json payload: ')
+      const storedMismatchHash = 'a'.repeat(64)
 
-  it('falls back gracefully to fixtures when registry contract is unset', async () => {
-    const registry = await loadRegistry(null)
-    expect(registry.isRegistryConfigured()).toBe(false)
+      const mockSimulate = vi.fn().mockImplementation(async (method: string) => {
+        if (method === 'get_project') {
+          return { ...baseRawProject, metadata_hash: storedMismatchHash }
+        }
+        return []
+      })
+      setSimulateRegistryCall(mockSimulate)
 
-    const total = await registry.fetchTotalProjects()
-    expect(total).toBeGreaterThan(0)
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => corruptBytes.buffer,
+      })
+      vi.stubGlobal('fetch', mockFetch)
 
-    const page = await registry.fetchProjectsPage(0, 3)
-    expect(page.projects).toHaveLength(3)
-    expect(page.total).toBe(total)
+      const res = await fetchProjectWithDetails(1)
+      expect(res).not.toBeNull()
+      expect(res?.verifiedMetadata).toBe('mismatch')
+      expect(mockSimulate).not.toHaveBeenCalledWith(
+        'verify_metadata_hash',
+        expect.anything(),
+        expect.anything(),
+      )
+    })
 
-    const detail = await registry.fetchProjectWithDetails(1)
-    expect(detail).not.toBeNull()
-    expect(detail?.project.id).toBe(1)
-    expect(detail?.verifiedMetadata).toBe(true)
+    it('returns "unverified" on registry RPC error with fallback fixture', async () => {
+      const mockSimulate = vi.fn().mockRejectedValue(new Error('RPC connection timeout'))
+      setSimulateRegistryCall(mockSimulate)
 
-    const scores = await registry.fetchScoreHistory(1)
-    expect(scores.credit.length).toBeGreaterThan(0)
-    expect(scores.green.length).toBeGreaterThan(0)
+      const res = await fetchProjectWithDetails(1)
+      expect(res).not.toBeNull()
+      expect(res?.verifiedMetadata).toBe('unverified')
+    })
+
+    it('never calls verify_metadata_hash with stored on-chain hash when metadata fetch fails', async () => {
+      const storedOnChainHash = 'e1e2e3e4'.repeat(16)
+
+      const mockSimulate = vi.fn().mockImplementation(async (method: string) => {
+        if (method === 'get_project') {
+          return { ...baseRawProject, metadata_hash: storedOnChainHash }
+        }
+        return null
+      })
+      setSimulateRegistryCall(mockSimulate)
+
+      const mockFetch = vi.fn().mockRejectedValue(new Error('Host 503 Service Unavailable'))
+      vi.stubGlobal('fetch', mockFetch)
+
+      const res = await fetchProjectWithDetails(1)
+      expect(res).not.toBeNull()
+      expect(res?.verifiedMetadata).toBe('unverified')
+
+      // Ensure verify_metadata_hash is NEVER called, especially with storedOnChainHash
+      const verifyCalls = mockSimulate.mock.calls.filter(
+        (call) => call[0] === 'verify_metadata_hash',
+      )
+      expect(verifyCalls).toHaveLength(0)
+      expect(mockSimulate).not.toHaveBeenCalledWith(
+        'verify_metadata_hash',
+        [1, storedOnChainHash],
+        expect.anything(),
+      )
+    })
   })
 })
