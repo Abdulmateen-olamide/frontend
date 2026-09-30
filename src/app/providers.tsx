@@ -1,6 +1,6 @@
 'use client'
 import type { ReactNode } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { ThemeProvider } from '../theme/ThemeProvider'
 import { WalletProvider, useWallet } from '../wallet/WalletProvider'
 import { TransactionsProvider } from '../wallet/TransactionsProvider'
