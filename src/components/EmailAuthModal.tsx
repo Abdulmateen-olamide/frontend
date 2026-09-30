@@ -77,7 +77,8 @@ export function EmailAuthModal({ open, onClose, onSuccess, onSocialLogin }: Emai
     setBioError(null)
     try {
       await registerBiometric(email)
-      // After registration, log in automatically
+      // Establish a verified login session after enrolling the credential.
+      await loginBiometric(email)
       if (onSuccess) onSuccess(email)
       onClose()
     } catch (err: unknown) {

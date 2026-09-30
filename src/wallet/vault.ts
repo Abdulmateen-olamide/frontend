@@ -1,3 +1,4 @@
+import { recordTransaction, updateTransaction, TransactionPendingError } from './transactions'
 // InvestmentVault client — synchronous simulation + async on-chain reads.
 //
 // The sync `vault` object mirrors the Soroban vault's surface so deposit &
@@ -364,6 +365,8 @@ export interface TransactionConfirmation {
   returnValue?: unknown
 }
 
+class TransactionFailedError extends Error {}
+
 /** Poll until a submitted transaction reaches a terminal status. */
 async function waitForTransaction(hash: string): Promise<TransactionConfirmation> {
   const { rpc } = await import('@stellar/stellar-sdk')
@@ -380,7 +383,7 @@ async function waitForTransaction(hash: string): Promise<TransactionConfirmation
       return result as unknown as TransactionConfirmation
     }
     if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
-      throw new Error('Transaction failed on-chain')
+      throw new TransactionFailedError('Transaction failed on-chain')
     }
     // NOT_FOUND means still pending, keep polling
   }
@@ -396,6 +399,7 @@ async function invokeSigned(
   method: string,
   args: XdrTypes.ScVal[],
   sign: (xdr: string) => Promise<string>,
+  amount?: number,
 ): Promise<{ hash: string; confirmation: TransactionConfirmation }> {
   if (offline) throw new Error('Stellar node is offline')
 
@@ -426,15 +430,139 @@ async function invokeSigned(
   const signedXdr = await sign(assembled.toXDR())
   const signedTx = new Transaction(signedXdr, NETWORK_PASSPHRASE)
 
-  const sendResult = await withTimeout(
-    server.sendTransaction(signedTx),
-    'Stellar RPC timed out submitting transaction',
-  )
-  if (sendResult.status === 'ERROR')
-    throw new Error(`Send failed: ${JSON.stringify(sendResult.errorResult)}`)
+  const localHash = signedTx.hash().toString('hex')
+  const fee = Number(assembled.fee) / SCALE
+  const ext = assembled.toEnvelope().v1().tx().ext()
+  const resourceFee =
+    ext.switch() === 1 ? Number(ext.sorobanData().resourceFee().toString()) / SCALE : 0
+  recordTransaction({
+    hash: localHash,
+    kind: method,
+    amount,
+    address,
+    status: 'pending',
+    fee,
+    resourceFee,
+    inclusionFee: Math.max(0, fee - resourceFee),
+  })
+  let hash = localHash
+  try {
+    const sendResult = await withTimeout(
+      server.sendTransaction(signedTx),
+      'Stellar RPC timed out submitting transaction',
+    )
+    if (sendResult.status === 'ERROR' || sendResult.status === 'TRY_AGAIN_LATER') {
+      throw new TransactionFailedError(
+        `Send failed: ${JSON.stringify(sendResult.errorResult ?? sendResult.status)}`,
+      )
+    }
+    // The RPC hash should equal the hash computed from the signed envelope.
+    if (sendResult.hash && sendResult.hash !== localHash) {
+      throw new TransactionPendingError(localHash)
+    }
+    hash = sendResult.hash || localHash
+    const confirmation = await waitForTransaction(hash)
+    updateTransaction(hash, 'confirmed', { error: undefined })
+    return { hash, confirmation }
+  } catch (error) {
+    if (error instanceof TransactionFailedError) {
+      updateTransaction(hash, 'failed', { error: error.message })
+      throw error
+    }
+    updateTransaction(hash, 'timeout_pending', { error: undefined })
+    throw new TransactionPendingError(hash)
+  }
+}
 
-  const confirmation = await waitForTransaction(sendResult.hash)
-  return { hash: sendResult.hash, confirmation }
+/**
+ * Estimate the real Soroban resource fee for a deposit or withdraw transaction via simulation.
+ * Returns an estimated maximum network fee in XLM, or null when unavailable.
+ */
+export async function estimateTransactionFee(
+  kind: 'deposit' | 'withdraw',
+  amount: number,
+  address: string,
+  slippageTolerance = 0.005,
+): Promise<number | null> {
+  if (!CONTRACT_ID || offline || !address) {
+    return null
+  }
+
+  try {
+    const { rpc, Contract, TransactionBuilder, Horizon, nativeToScVal } =
+      await import('@stellar/stellar-sdk')
+
+    const server = new rpc.Server(RPC_URL, { allowHttp: allowHttpFor(RPC_URL) })
+    const horizon = new Horizon.Server(HORIZON_URL, { allowHttp: allowHttpFor(HORIZON_URL) })
+    const contract = new Contract(CONTRACT_ID)
+
+    const account = await withTimeout(
+      horizon.loadAccount(address),
+      'Stellar Horizon timed out loading account',
+    )
+
+    let args: XdrTypes.ScVal[] = []
+    if (kind === 'deposit') {
+      const minShares = Math.floor((amount / cachedSharePrice) * (1 - slippageTolerance) * SCALE)
+      args = [
+        nativeToScVal(toStroops(amount), { type: 'i128' }),
+        nativeToScVal(BigInt(minShares), { type: 'i128' }),
+      ]
+    } else {
+      const shares = Math.round((amount / cachedSharePrice) * SCALE)
+      const minUsdcReturn = Math.floor(amount * (1 - slippageTolerance) * SCALE)
+      args = [
+        nativeToScVal(BigInt(shares), { type: 'i128' }),
+        nativeToScVal(BigInt(minUsdcReturn), { type: 'i128' }),
+      ]
+    }
+
+    const tx = new TransactionBuilder(account, {
+      fee: '100',
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(contract.call(kind, ...args))
+      .setTimeout(180)
+      .build()
+
+    const simResult = await withTimeout(
+      server.simulateTransaction(tx),
+      'Stellar RPC timed out during simulation',
+    )
+
+    if ('error' in simResult) return null
+
+    const assembled = rpc.assembleTransaction(tx, simResult).build()
+    const feeInUnits = Number(assembled.fee) / SCALE
+    return feeInUnits > 0 ? feeInUnits : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Check single transaction status on-chain.
+ */
+export async function checkTransactionOnChain(
+  hash: string,
+): Promise<'confirmed' | 'failed' | 'pending'> {
+  if (!CONTRACT_ID || hash.startsWith('demo')) {
+    return 'confirmed'
+  }
+  try {
+    const { rpc } = await import('@stellar/stellar-sdk')
+    const server = new rpc.Server(RPC_URL, { allowHttp: allowHttpFor(RPC_URL) })
+    const result = await server.getTransaction(hash)
+    if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) {
+      return 'confirmed'
+    }
+    if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
+      return 'failed'
+    }
+    return 'pending'
+  } catch {
+    return 'pending'
+  }
 }
 
 /**
@@ -458,6 +586,7 @@ export async function submitDeposit(
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
         const demoHash = `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`
+        recordTransaction({ hash: demoHash, kind: 'deposit', status: 'confirmed', amount })
         notifyTransactionConfirmed(demoHash, 'deposit')
         resolve(demoHash)
       }, SIMULATED_DEPOSIT_DELAY_MS)
@@ -484,6 +613,7 @@ export async function submitDeposit(
       nativeToScVal(BigInt(minShares), { type: 'i128' }),
     ],
     sign,
+    amount,
   )
   notifyTransactionConfirmed(hash, 'deposit')
   return hash
@@ -513,6 +643,7 @@ export async function submitWithdraw(
       const timer = setTimeout(() => {
         const demoHash = `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`
         const isQueued = amount > 236
+        recordTransaction({ hash: demoHash, kind: 'withdraw', status: 'confirmed', amount })
         notifyTransactionConfirmed(demoHash, 'withdraw')
         resolve(createWithdrawResult(demoHash, isQueued, isQueued ? 1 : undefined, amount))
       }, SIMULATED_WITHDRAW_DELAY_MS)
@@ -541,6 +672,7 @@ export async function submitWithdraw(
       nativeToScVal(BigInt(minUsdcReturn), { type: 'i128' }),
     ],
     sign,
+    amount,
   )
   let queued = false
   let position: number | undefined
@@ -685,6 +817,7 @@ export async function submitClaim(
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
         const demoHash = `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`
+        recordTransaction({ hash: demoHash, kind: 'claim', status: 'confirmed' })
         notifyTransactionConfirmed(demoHash, 'claim')
         resolve(demoHash)
       }, 1500)
@@ -719,6 +852,7 @@ export async function submitClaimYield(
   if (!CONTRACT_ID) {
     await new Promise((resolve) => setTimeout(resolve, 1500))
     const demoHash = `demo${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}…${Math.random().toString(36).slice(2, 8)}`
+    recordTransaction({ hash: demoHash, kind: 'claim_yield', status: 'confirmed' })
     notifyTransactionConfirmed(demoHash, 'claim_yield')
     return demoHash
   }

@@ -7,6 +7,8 @@ import { fetchUtilizationBps, submitWithdraw } from '../wallet/vault'
 import { reportTransactionFailure } from '../lib/errorReporting'
 import { parseContractError, translateContractError } from '../lib/contractErrors'
 import { useWallet } from '../wallet/WalletProvider'
+import { TransactionPendingError } from '../wallet/transactions'
+import { useTransactionFee } from '../wallet/useTransactionFee'
 import { formatDecimal, parseAmount } from '../lib/format'
 import { addPendingClaim } from '../wallet/pendingClaims'
 
@@ -55,6 +57,14 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
   const mountedRef = useRef(true)
   const abortControllerRef = useRef<AbortController | null>(null)
 
+  const n = parseAmount(amount)
+
+  const estimatedFee = useTransactionFee('withdraw', n, address, slippageTolerance)
+  const feeLabel =
+    estimatedFee === null
+      ? 'Estimate unavailable'
+      : `${estimatedFee.toFixed(7)} XLM (estimated maximum)`
+
   useEffect(() => {
     mountedRef.current = true
     return () => {
@@ -75,7 +85,6 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
     }
   }
   // Consolidate amount parsing with parseAmount helper (#417).
-  const n = parseAmount(amount)
 
   const renderStep = (currentStep: WithdrawStep) => {
     const txExplorerUrl = txHash
@@ -87,6 +96,7 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
         return (
           <div style={panel}>
             <h1 style={hw}>{t('h1')}</h1>
+            <p>Network fee: {feeLabel}</p>
             {txError && (
               <div
                 role="alert"
@@ -260,6 +270,17 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                 } catch (e) {
                   if (mountedRef.current) {
                     if (e instanceof Error && e.message === 'Aborted') {
+                      return
+                    }
+                    const isTimeout = e instanceof TransactionPendingError
+                    if (isTimeout) {
+                      toast({
+                        tone: 'solar',
+                        title: "Still pending — we'll keep checking",
+                        message:
+                          'Withdrawal submitted but waiting for on-chain confirmation. Background tracking is active.',
+                      })
+                      changeStep('amount')
                       return
                     }
                     // Contract failures get a translated, actionable message (#610);

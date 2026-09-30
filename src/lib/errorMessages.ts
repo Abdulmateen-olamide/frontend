@@ -72,14 +72,16 @@ function extractCodeFromError(error: unknown): string | null {
   const obj = error as Record<string, unknown>
   // If it looks like an Axios/Axios-like error with a response
   if (obj.response) {
-    const status = (obj.response as Record<string, unknown>).status
+    const response = obj.response as Record<string, unknown>
+    const status = response.status
     if (typeof status === 'number' && status >= 500) {
       return String(status)
     }
-    const data = obj.response.data
+    const data = response.data
     if (data && typeof data === 'object') {
-      if (typeof data.code === 'string') return data.code
-      if (typeof data.message === 'string') return data.message
+      const { code, message } = data as Record<string, unknown>
+      if (typeof code === 'string') return code
+      if (typeof message === 'string') return message
     } else if (typeof data === 'string' && data.trim()) {
       return data
     }

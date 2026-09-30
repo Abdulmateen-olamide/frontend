@@ -27,9 +27,10 @@ not set, so the app works out of the box without a running backend.
 
 ## Environment configuration
 
-| Variable              | Required | Example                 | Purpose                                                                                       |
-| --------------------- | -------- | ----------------------- | --------------------------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_API_URL` | No       | `http://localhost:3001` | Backend base URL. When absent every call uses local fixture data and no HTTP request is made. |
+| Variable | Required | Example | Purpose |
+|---|---|---|---|
+| `NEXT_PUBLIC_API_URL` | No | `http://localhost:3001` | Backend base URL. When absent, the app runs in demo mode and uses local fixture data. No HTTP requests are made. |
+| `NEXT_PUBLIC_DEMO_MODE` | No | `true` | Force demo mode even when `NEXT_PUBLIC_API_URL` is set. Useful for testing or staging previews without a live backend. |
 
 Copy `.env.example` to `.env.local` and set `NEXT_PUBLIC_API_URL` to point at
 your local or staging backend before running `bun run dev`.
@@ -65,10 +66,10 @@ Returned by [`getProject`](#getproject).
 
 ```ts
 interface Investment {
-  id: number // Server-assigned investment ID
-  projectId: number // The project invested in
-  amount: number // USDC amount
-  projectUrl: string // Canonical URL, e.g. "/projects/42"
+  id: number          // Server-assigned investment ID
+  projectId: number   // The project invested in
+  amount: number      // USDC amount
+  projectUrl: string  // Canonical URL, e.g. "/projects/42"
 }
 ```
 
@@ -79,10 +80,10 @@ Returned by [`createInvestment`](#createinvestment).
 ```ts
 interface PaginatedProjectsResponse {
   projects: Project[]
-  total: number // Total matching records (not just this page)
-  page: number // 1-indexed current page
-  pageSize: number // Items per page
-  hasMore: boolean // Whether another page exists
+  total: number     // Total matching records (not just this page)
+  page: number      // 1-indexed current page
+  pageSize: number  // Items per page
+  hasMore: boolean  // Whether another page exists
 }
 ```
 
@@ -92,8 +93,8 @@ Returned by [`getProjectsPaginated`](#getprojectspaginated).
 
 ```ts
 interface PricePoint {
-  date: string // ISO 8601 date, e.g. "2025-03-14"
-  price: number // Bond price in USDC
+  date: string   // ISO 8601 date, e.g. "2025-03-14"
+  price: number  // Bond price in USDC
   yield?: number // Yield at that date (percentage)
 }
 ```
@@ -114,11 +115,13 @@ Fetches all bond projects.
 
 **Backend endpoint:** `GET /projects`
 
-**Returns:** Array of `Project` objects. Empty array on network error (falls back
-to fixture data instead, see [fallback behavior](#demo--fixture-fallback)).
+**Returns:** Array of `Project` objects.
+
+**Throws:** `ApiError` on network failures, HTTP errors, or timeouts (after 8 seconds).
 
 **Demo fallback:** Returns all projects from `src/data.ts` via
-`selectProjects()`.
+`selectProjects()`. **On-chain priority:** If a project registry contract is
+configured, data is read from the Stellar blockchain first.
 
 **Example:**
 
@@ -135,7 +138,7 @@ const projects = await getProjects()
 
 ```ts
 async function getProjectsPaginated(
-  page?: number, // default: 1
+  page?: number,     // default: 1
   pageSize?: number, // default: 12
 ): Promise<PaginatedProjectsResponse>
 ```
@@ -148,16 +151,20 @@ by deferring off-screen projects.
 
 **Parameters:**
 
-| Param      | Type     | Default | Description           |
-| ---------- | -------- | ------- | --------------------- |
-| `page`     | `number` | `1`     | 1-indexed page number |
-| `pageSize` | `number` | `12`    | Items per page        |
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `page` | `number` | `1` | 1-indexed page number |
+| `pageSize` | `number` | `12` | Items per page |
 
 **Returns:** `PaginatedProjectsResponse`
 
+**Throws:** `ApiError` on network failures, HTTP errors, or timeouts (after 8 seconds).
+
 **Demo fallback:** Slices `selectProjects()` with the same pagination math.
 Handles both paginated API responses (`{ projects, total, page, ... }`) and
-legacy flat-array responses from older backend versions.
+legacy flat-array responses from older backend versions. **On-chain priority:**
+If a project registry contract is configured, data is read from the Stellar
+blockchain first.
 
 **Example:**
 
@@ -187,14 +194,19 @@ Fetches a single project with its full detail record.
 
 **Parameters:**
 
-| Param | Type     | Description                                                                                                                         |
-| ----- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `id`  | `number` | Must be a positive integer (`id >= 1`). Non-integer, negative, zero, or `NaN` ids return `null` immediately without a network call. |
+| Param | Type | Description |
+|---|---|---|
+| `id` | `number` | Must be a positive integer (`id >= 1`). Non-integer, negative, zero, or `NaN` ids return `null` immediately without a network call. |
 
 **Returns:** `ProjectWithDetail` or `null` when the project is not found.
 
+**Throws:** `ApiError` on network failures, HTTP errors, or timeouts (after 8 seconds).
+
 **Demo fallback:** Looks up `selectProjectById(id)` and `selectProjectDetail(id)`
-from fixture data. Returns `null` if either is missing.
+from fixture data. Returns `null` if either is missing. **On-chain priority:**
+If a project registry contract is configured, project and detail data are read
+from the Stellar blockchain first, with a `verifiedMetadata` flag indicating
+on-chain verification.
 
 **Example:**
 
@@ -208,7 +220,7 @@ if (result) {
 }
 
 // Invalid ids return null immediately — no request fired:
-await getProject(-1) // null
+await getProject(-1)  // null
 await getProject(NaN) // null
 await getProject(1.5) // null
 ```
@@ -218,7 +230,10 @@ await getProject(1.5) // null
 ### `createInvestment`
 
 ```ts
-async function createInvestment(input: { projectId: number; amount: number }): Promise<Investment>
+async function createInvestment(input: {
+  projectId: number
+  amount: number
+}): Promise<Investment>
 ```
 
 Creates a new investment record on the backend.
@@ -236,19 +251,17 @@ Creates a new investment record on the backend.
 
 **Parameters:**
 
-| Field       | Type     | Constraints                                                        |
-| ----------- | -------- | ------------------------------------------------------------------ |
-| `projectId` | `number` | Must be a positive integer (`>= 1`). Throws on invalid input.      |
-| `amount`    | `number` | Must be a positive finite number (`> 0`). Throws on invalid input. |
+| Field | Type | Constraints |
+|---|---|---|
+| `projectId` | `number` | Must be a positive integer (`>= 1`). Throws on invalid input. |
+| `amount` | `number` | Must be a positive finite number (`> 0`). Throws on invalid input. |
 
 **Returns:** `Investment`
 
-**Throws:** `Error('Invalid investment input')` for any of:
-
-- Non-integer `projectId`
-- `projectId < 1`
-- Non-finite `amount`
-- `amount <= 0`
+**Throws:**
+- `Error('Invalid investment input')` for invalid input (non-integer `projectId`,
+  `projectId < 1`, non-finite `amount`, or `amount <= 0`)
+- `ApiError` on network failures, HTTP errors, or timeouts (after 8 seconds)
 
 Input is validated _before_ any network call, so invalid inputs never reach
 the backend.
@@ -266,8 +279,8 @@ const investment = await createInvestment({ projectId: 3, amount: 250 })
 // { id: 84712, projectId: 3, amount: 250, projectUrl: '/projects/3' }
 
 // Invalid — throws before any HTTP call
-await createInvestment({ projectId: 0, amount: 100 }) // throws
-await createInvestment({ projectId: 1, amount: -50 }) // throws
+await createInvestment({ projectId: 0, amount: 100 })  // throws
+await createInvestment({ projectId: 1, amount: -50 })  // throws
 await createInvestment({ projectId: 1.5, amount: 100 }) // throws
 ```
 
@@ -285,12 +298,14 @@ Fetches 30-day bond price and yield history for a project.
 
 **Parameters:**
 
-| Param       | Type     | Description |
-| ----------- | -------- | ----------- |
-| `projectId` | `number` | Project ID  |
+| Param | Type | Description |
+|---|---|---|
+| `projectId` | `number` | Project ID |
 
 **Returns:** Array of `PricePoint` objects sorted in ascending chronological
 order (oldest first). The backend response is re-sorted if necessary.
+
+**Throws:** `ApiError` on network failures, HTTP errors, or timeouts (after 8 seconds).
 
 **Demo fallback:** Generates a deterministic 30-day mock series using
 `projectId` as a seed so the sparkline shape is consistent per project across
@@ -317,32 +332,29 @@ const history = await getPriceHistory(2)
 ### `biometricLogin`
 
 ```ts
-async function biometricLogin(): Promise<boolean>
+async function biometricLogin(username?: string): Promise<boolean>
 ```
 
-Triggers a WebAuthn biometric prompt (Face ID / Touch ID) and returns whether
-the user authenticated successfully.
+Triggers a WebAuthn biometric prompt (Face ID / Touch ID) and delegates to the canonical challenge-response flow in `webauthn.ts`.
 
-**No backend endpoint** — this is a pure client-side WebAuthn call. The
-challenge is generated locally (random 32-byte array). In production, replace
-the local challenge with a server-issued one before verifying the assertion.
+**Client contract:** Requests options from `/webauthn/login/begin`, presents them to `navigator.credentials.get`, and posts the assertion to `/webauthn/login/complete`. Completion must return HTTP success with `{ "verified": true }`; HTTP success alone is insufficient. Requests use same-origin cookies and disable caching.
 
-**Returns:** `true` if the biometric credential was successfully retrieved,
-`false` if:
+**Backend dependency:** This repository does not implement these endpoints. A backend must issue expiring, single-use challenges, verify assertions against stored public keys and the expected origin/RP ID, and establish an authenticated session before returning verification success. The client boolean is UI feedback, not server authorization.
 
+**Returns:** `true` if the biometric assertion was successfully verified by the server, `false` if:
+- The username is missing or blank (there is no shared default identity)
 - WebAuthn is not supported (`window.PublicKeyCredential` is absent)
-- The user cancelled
-- An error occurred (logged as a warning)
+- The user cancelled or failed the prompt
+- Server challenge issuance or assertion verification failed (logged as a warning)
 
-**Environment:** Only works in a browser context with a registered
-authenticator. Always returns `false` in SSR (`window === undefined`).
+**Environment:** Only works in a browser context with a registered authenticator. Always returns `false` in SSR (`window === undefined`).
 
 **Example:**
 
 ```ts
 import { biometricLogin } from '@/lib/api'
 
-const ok = await biometricLogin()
+const ok = await biometricLogin('user@example.com')
 if (ok) {
   // proceed with authenticated session
 } else {
@@ -354,17 +366,90 @@ if (ok) {
 
 ## Error handling
 
-All network functions follow the same pattern:
+### Data sources and fallback priority
 
-1. **Optimistic attempt** — call the backend, parse the response.
-2. **On failure** — log a `console.warn` with the endpoint name and fall back to
-   local fixture data without surfacing an error to the user.
-3. **Never throw** for network errors — only `createInvestment` throws, and only
-   for _invalid input_, never for network failures.
+The API client reads project data from three sources in the following priority order:
 
-The one input-validation exception is `createInvestment`, which throws
-`Error('Invalid investment input')` synchronously for bad `projectId` or
-`amount`. Callers should catch this and show a validation message.
+1. **On-chain registry** — If `isRegistryConfigured()` returns `true` (when a
+   Stellar ProjectRegistry contract is deployed and configured), project data
+   is read directly from the blockchain via Stellar RPC. This is the highest-
+   trust path and bypasses HTTP entirely.
+2. **Demo fixtures** — If `NEXT_PUBLIC_API_URL` is **not** set (or
+   `NEXT_PUBLIC_DEMO_MODE=true` is explicitly enabled), all functions return
+   deterministic mock data from `src/data.ts` and `src/data/projectDetails.ts`.
+   No HTTP requests are made. A "Demo data" badge appears in the UI when
+   `shouldShowDemoBadge()` returns `true`.
+3. **HTTP backend** — If `NEXT_PUBLIC_API_URL` is set and demo mode is off,
+   the client calls the configured backend. **Failures throw `ApiError`** —
+   they are not silently swallowed.
+
+### ApiError
+
+Network failures, HTTP errors (non-2xx status), and timeouts all throw `ApiError`:
+
+```ts
+import { ApiError } from '@/lib/api'
+
+try {
+  const projects = await getProjects()
+} catch (err) {
+  if (err instanceof ApiError) {
+    console.error('API failed:', err.status, err.code, err.message)
+    // err.status: HTTP status (404, 503, etc.) if applicable
+    // err.code: Machine-readable code (e.g., "HTTP_503", "rpc-timeout")
+    // err.message: Human-readable message
+  }
+}
+```
+
+`ApiError` is defined in `src/lib/error.ts` and includes optional `status`,
+`code`, and `cause` fields for debugging and error reporting.
+
+### Timeout behavior
+
+All HTTP calls are wrapped in an 8-second timeout (`API_TIMEOUT_MS`). If a
+request does not complete within 8 seconds, it is aborted and an error is
+reported to telemetry with `{ kind: 'rpc-timeout', context: { target: 'api' } }`.
+The timeout error is then thrown to the caller.
+
+```ts
+// After 8 seconds, throws:
+// Error: "timed out after 8000ms"
+const projects = await getProjects()
+```
+
+### NEXT_PUBLIC_DEMO_MODE
+
+To force demo mode even when `NEXT_PUBLIC_API_URL` is set (useful for testing
+or staging previews without a live backend), set:
+
+```bash
+NEXT_PUBLIC_DEMO_MODE=true
+```
+
+When enabled, `shouldShowDemoBadge()` returns `true` and a visual indicator
+appears in the UI so users know the data is not real.
+
+### Usage example with error handling
+
+```ts
+import { getProjects, ApiError } from '@/lib/api'
+
+async function loadExploreScreen() {
+  try {
+    const projects = await getProjects()
+    // success — render projects
+  } catch (err) {
+    if (err instanceof ApiError) {
+      // show user-facing error: "Could not load projects. Please try again."
+      // log to error reporting: err.status, err.code, err.message
+    } else {
+      // unexpected error — rethrow or log
+      throw err
+    }
+  }
+}
+```
 
 For mapping backend error codes to user-facing strings, see
 [`src/lib/errorMessages.ts`](src/lib/errorMessages.ts) and
@@ -374,20 +459,37 @@ For mapping backend error codes to user-facing strings, see
 
 ## Demo / fixture fallback
 
-When `NEXT_PUBLIC_API_URL` is not set (or is empty), **no HTTP requests are
-made**. Every function returns deterministic fixture data from:
+When `NEXT_PUBLIC_API_URL` is **not set** (or is empty), the app runs in **demo
+mode**. In this mode:
 
-- `src/data.ts` — pool summary, projects list, investor position, activity feed
-- `src/data/projectDetails.ts` — per-project oracle history, creator info,
-  funding timeline, price history
-- `src/state/selectors.ts` — flat accessor functions over the above
+- **No HTTP requests are made** — every API function returns deterministic
+  fixture data immediately.
+- Fixture data comes from:
+  - `src/data.ts` — pool summary, projects list, investor position, activity feed
+  - `src/data/projectDetails.ts` — per-project oracle history, creator info,
+    funding timeline, price history
+  - `src/state/selectors.ts` — flat accessor functions over the above
+- `shouldShowDemoBadge()` returns `true`, and the UI displays a "Demo data"
+  badge so users know the data is not live.
 
 This means the full click-through works without a backend, including the Explore,
 Project Detail, and Deposit screens.
 
-When `NEXT_PUBLIC_API_URL` _is_ set and a request fails, the same fixture
-fallback kicks in silently. The app never shows a blank screen due to a missing
-or slow backend.
+### Demo mode vs. HTTP failures
+
+**When `NEXT_PUBLIC_API_URL` is set**, demo mode is **off**. HTTP failures
+(timeouts, 5xx errors, network errors) **throw `ApiError`** and do not fall
+back to fixtures. The caller must handle the error and show appropriate UI
+(loading state, retry button, error message).
+
+To force demo mode even when `NEXT_PUBLIC_API_URL` is set, use:
+
+```bash
+NEXT_PUBLIC_DEMO_MODE=true
+```
+
+This is useful for testing, staging previews, or demos where you want to use
+the production-like URL structure but don't have a live backend.
 
 ---
 
@@ -424,7 +526,7 @@ export default async function Page({ params }: { params: { id: string } }) {
 ### Creating an investment
 
 ```ts
-import { createInvestment } from '@/lib/api'
+import { createInvestment, ApiError } from '@/lib/api'
 
 async function handleDeposit(projectId: number, amount: number) {
   try {
@@ -432,7 +534,12 @@ async function handleDeposit(projectId: number, amount: number) {
     router.push(investment.projectUrl)
   } catch (err) {
     if (err instanceof Error && err.message === 'Invalid investment input') {
-      setFormError('Please enter a valid amount.')
+      setFormError('Please enter a valid amount and project ID.')
+    } else if (err instanceof ApiError) {
+      setFormError('Network error. Please check your connection and try again.')
+      console.error('Investment creation failed:', err.status, err.message)
+    } else {
+      throw err
     }
   }
 }
