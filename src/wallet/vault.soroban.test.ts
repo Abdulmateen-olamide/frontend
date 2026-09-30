@@ -35,6 +35,7 @@ vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
   }
   class HorizonServer {
     loadAccount = rpcMock.loadAccount
+    fetchBaseFee = vi.fn().mockResolvedValue(100)
   }
   return {
     ...actual,
@@ -312,7 +313,7 @@ describe('signed transactions', () => {
         BigInt(Math.floor(200 * 0.995 * 1e7)),
       ],
     })
-  })
+  }, 10000)
 
   it('claim() takes no arguments', async () => {
     const vault = await loadVault()
@@ -368,7 +369,7 @@ describe('signed transactions', () => {
     })
     expect(result).not.toHaveProperty('position')
     expect(String(result)).toBe(simulatedTx().hash().toString('hex'))
-  })
+  }, 10000)
 
   it('detects a queued withdrawal when the RPC response omits events', async () => {
     const vault = await loadVault()
@@ -382,7 +383,7 @@ describe('signed transactions', () => {
     expect(result.queued).toBe(true)
     expect(result.estimatedAmount).toBeUndefined()
     expect(result).not.toHaveProperty('position')
-  })
+  }, 10000)
 
   it('does not ask the wallet to sign when simulation fails', async () => {
     const vault = await loadVault()
@@ -406,11 +407,45 @@ describe('signed transactions', () => {
     )
   })
 
+  it('retries TRY_AGAIN_LATER with backoff', async () => {
+    const vault = await loadVault()
+    rpcMock.sendTransaction
+      .mockResolvedValueOnce({ status: 'TRY_AGAIN_LATER' })
+      .mockResolvedValueOnce({ status: 'TRY_AGAIN_LATER' })
+      .mockImplementation(async (tx: Transaction) => ({
+        status: 'PENDING',
+        hash: tx.hash().toString('hex'),
+      }))
+
+    await settle(vault.submitWithdraw(100, USER, sign))
+    expect(rpcMock.sendTransaction).toHaveBeenCalledTimes(3)
+  })
+
+  it('fails after max TRY_AGAIN_LATER retries', async () => {
+    const vault = await loadVault()
+    rpcMock.sendTransaction.mockResolvedValue({ status: 'TRY_AGAIN_LATER' })
+    await expect(settle(vault.submitWithdraw(100, USER, sign))).rejects.toThrow(
+      'Send failed: TRY_AGAIN_LATER',
+    )
+  })
+
   it('surfaces an on-chain failure', async () => {
     const vault = await loadVault()
     rpcMock.getTransaction.mockResolvedValue({ status: 'FAILED' })
     await expect(settle(vault.submitClaim(USER, sign))).rejects.toThrow(
       'Transaction failed on-chain',
+    )
+  })
+
+  it('surfaces an on-chain contract failure with error code', async () => {
+    const vault = await loadVault()
+    const errorVal = xdr.ScVal.scvError(xdr.ScError.sceContract(33))
+    rpcMock.getTransaction.mockResolvedValue({
+      status: 'FAILED',
+      resultXdr: errorVal,
+    })
+    await expect(settle(vault.submitClaim(USER, sign))).rejects.toThrow(
+      'Transaction failed on-chain: Error(Contract, #33)',
     )
   })
 

@@ -526,6 +526,29 @@ function decodeWithdrawConfirmation(
 
 class TransactionFailedError extends Error {}
 
+function extractContractError(result: unknown): string {
+  let foundCode: string | undefined
+  function walk(obj: unknown) {
+    if (foundCode || !obj || typeof obj !== 'object') return
+    if (Array.isArray(obj)) {
+      for (const item of obj) walk(item)
+      return
+    }
+    const rec = obj as Record<string, unknown>
+    const sw = rec._switch
+    if (sw && typeof sw === 'object' && (sw as Record<string, unknown>).name === 'sceContract') {
+      const val = rec._value
+      if (typeof val === 'number') {
+        foundCode = val.toString()
+        return
+      }
+    }
+    for (const value of Object.values(rec)) walk(value)
+  }
+  walk(result)
+  return foundCode ? `Error(Contract, #${foundCode})` : ''
+}
+
 /** Poll until a submitted transaction reaches a terminal status. */
 async function waitForTransaction(hash: string): Promise<TransactionConfirmation> {
   const { rpc } = await import('@stellar/stellar-sdk')
@@ -542,11 +565,14 @@ async function waitForTransaction(hash: string): Promise<TransactionConfirmation
       return result as unknown as TransactionConfirmation
     }
     if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
-      throw new TransactionFailedError('Transaction failed on-chain')
+      const contractErr = extractContractError(result)
+      throw new TransactionFailedError(
+        `Transaction failed on-chain${contractErr ? `: ${contractErr}` : ''}`,
+      )
     }
     // NOT_FOUND means still pending, keep polling
   }
-  throw new Error('Transaction confirmation timed out')
+  throw new TransactionPendingError(hash)
 }
 
 /**
@@ -569,12 +595,15 @@ async function invokeSigned(
   const horizon = new Horizon.Server(HORIZON_URL, { allowHttp: allowHttpFor(HORIZON_URL) })
   const contract = new Contract(CONTRACT_ID!)
 
-  const account = await withTimeout(
-    horizon.loadAccount(address),
-    'Stellar Horizon timed out loading account',
-  )
+  const [account, baseFee] = await Promise.all([
+    withTimeout(horizon.loadAccount(address), 'Stellar Horizon timed out loading account'),
+    horizon.fetchBaseFee().catch(() => 100),
+  ])
 
-  const tx = new TransactionBuilder(account, { fee: '100', networkPassphrase: NETWORK_PASSPHRASE })
+  const tx = new TransactionBuilder(account, {
+    fee: baseFee.toString(),
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
     .addOperation(contract.call(method, ...args))
     .setTimeout(180)
     .build()
@@ -606,15 +635,36 @@ async function invokeSigned(
   })
   let hash = localHash
   try {
-    const sendResult = await withTimeout(
-      server.sendTransaction(signedTx),
-      'Stellar RPC timed out submitting transaction',
-    )
-    if (sendResult.status === 'ERROR' || sendResult.status === 'TRY_AGAIN_LATER') {
-      throw new TransactionFailedError(
-        `Send failed: ${JSON.stringify(sendResult.errorResult ?? sendResult.status)}`,
+    let sendResult
+    let retries = 0
+    const MAX_RETRIES = 5
+    while (true) {
+      sendResult = await withTimeout(
+        server.sendTransaction(signedTx),
+        'Stellar RPC timed out submitting transaction',
       )
+      if (sendResult.status === 'TRY_AGAIN_LATER') {
+        if (retries < MAX_RETRIES) {
+          retries++
+          await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, retries - 1)))
+          continue
+        }
+        throw new TransactionFailedError('Send failed: TRY_AGAIN_LATER')
+      }
+      break
     }
+
+    if (sendResult.status === 'ERROR') {
+      const contractErr = extractContractError(sendResult)
+      const msg = contractErr
+        ? contractErr
+        : JSON.stringify(sendResult.errorResult ?? 'unknown', (_, v) =>
+            typeof v === 'bigint' ? v.toString() : v,
+          )
+      throw new TransactionFailedError(`Send failed: ${msg}`)
+    }
+
+    // DUPLICATE and PENDING fall through to polling.
     // The RPC hash should equal the hash computed from the signed envelope.
     if (sendResult.hash && sendResult.hash !== localHash) {
       throw new TransactionPendingError(localHash)
@@ -655,10 +705,10 @@ export async function estimateTransactionFee(
     const horizon = new Horizon.Server(HORIZON_URL, { allowHttp: allowHttpFor(HORIZON_URL) })
     const contract = new Contract(CONTRACT_ID)
 
-    const account = await withTimeout(
-      horizon.loadAccount(address),
-      'Stellar Horizon timed out loading account',
-    )
+    const [account, baseFee] = await Promise.all([
+      withTimeout(horizon.loadAccount(address), 'Stellar Horizon timed out loading account'),
+      horizon.fetchBaseFee().catch(() => 100),
+    ])
 
     let args: XdrTypes.ScVal[] = []
     if (kind === 'deposit') {
@@ -677,7 +727,7 @@ export async function estimateTransactionFee(
     }
 
     const tx = new TransactionBuilder(account, {
-      fee: '100',
+      fee: baseFee.toString(),
       networkPassphrase: NETWORK_PASSPHRASE,
     })
       .addOperation(contract.call(kind, ...args))
