@@ -6,6 +6,8 @@
 import { describe, it, expect } from 'vitest'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { DEV_ROUTES } from '../lib/devRoutes'
+import { ROUTES } from '../lib/routeMetadata'
 
 const ROOT = path.resolve(__dirname, '..', '..')
 const SWAP = /\.(swp|swo|swn)$/
@@ -45,5 +47,51 @@ describe('repo hygiene (#653)', () => {
     const gitignore = readFileSync(path.join(ROOT, '.gitignore'), 'utf8')
     expect(gitignore).toContain('.vscode/')
     expect(gitignore).not.toContain('!.vscode/settings.json')
+  })
+})
+
+/**
+ * The README drifted from the code more than once (#659): a stale locale list, a
+ * stale route list, and a claim that the vault was simulated when it builds and
+ * submits real transactions. These checks fail when the docs go stale again.
+ */
+describe('README accuracy (#659)', () => {
+  const readme = readFileSync(path.join(ROOT, 'README.md'), 'utf8')
+
+  it('lists every locale in the message catalog', () => {
+    for (const file of readdirSync(path.join(ROOT, 'messages'))) {
+      expect(readme).toContain(file)
+    }
+  })
+
+  it('does not state a message key count that can go stale', () => {
+    expect(readme).not.toMatch(/\b\d{2,}\s+keys\b/i)
+  })
+
+  it('lists every route segment that src/app renders', () => {
+    const routes = [
+      ...ROUTES.map((r) => r.path),
+      '/project/[id]', // resolves its own metadata per record
+      ...DEV_ROUTES,
+    ]
+    for (const route of routes) {
+      if (route === '/') continue // the README calls it "the landing hero"
+      expect(readme).toContain(route)
+    }
+  })
+
+  it('no longer claims the on-chain calls are the unshipped work', () => {
+    // The stale wording called the vault client simulated and listed "real
+    // on-chain calls" as future work. Both have shipped; a fallback being
+    // described as a fallback is fine.
+    expect(readme).not.toMatch(/vault client is simulated/i)
+    expect(readme).not.toMatch(/real on-chain calls/i)
+    expect(readme).toMatch(/builds, signs and submits real Soroban transactions/i)
+  })
+
+  it('separates what is on-chain, env-var dependent and fixture data', () => {
+    expect(readme).toContain('## What runs where')
+    expect(readme).toMatch(/on-chain when the contract ID is set/i)
+    expect(readme).toMatch(/fixture/i)
   })
 })
