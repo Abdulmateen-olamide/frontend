@@ -419,6 +419,17 @@
     "yieldAriaLabel": "اتجاه سجل العوائد",
     "since": "منذ {date}"
   },
+  "TaxReports": {
+    "title": "التقارير الضريبية الفصلية",
+    "exportCsv": "تصدير CSV",
+    "disclaimer": "هذا ملخص توضيحي لحفظ السجلات، وليس نصيحة ضريبية. استشر متخصصاً ضريبياً لإقرارك.",
+    "columnQuarter": "الربع",
+    "columnDeposits": "الإيداعات",
+    "columnWithdrawals": "السحوبات",
+    "columnDistributions": "التوزيعات",
+    "columnRealizedGain": "الربح المحقق",
+    "currencyFormat": "{amount} $"
+  },
   "PasswordResetEmail": {
     "subject": "إعادة تعيين كلمة مرور Heliobond",
     "greeting": "مرحباً،",

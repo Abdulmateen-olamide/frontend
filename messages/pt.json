@@ -401,6 +401,17 @@
     "yieldAriaLabel": "Tendência do histórico de rendimentos",
     "since": "desde {date}"
   },
+  "TaxReports": {
+    "title": "Relatórios fiscais trimestrais",
+    "exportCsv": "Exportar CSV",
+    "disclaimer": "Este é um resumo ilustrativo para manutenção de registros, não consultoria fiscal. Consulte um profissional tributário para sua declaração.",
+    "columnQuarter": "Trimestre",
+    "columnDeposits": "Depósitos",
+    "columnWithdrawals": "Retiradas",
+    "columnDistributions": "Distribuições",
+    "columnRealizedGain": "Ganho realizado",
+    "currencyFormat": "US$ {amount}"
+  },
   "PasswordResetEmail": {
     "subject": "Redefinição de Senha - Heliobond",
     "greeting": "Hello,",

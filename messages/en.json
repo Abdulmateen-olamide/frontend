@@ -191,7 +191,8 @@
     "referralLink": "Your referral link",
     "referralCaption": "Share your link to invite friends. You both get rewards when they invest.",
     "copyLink": "Copy link",
-    "copied": "Copied"
+    "copied": "Copied",
+    "taxReports": "Tax reports"
   },
   "Referral": {
     "title": "Referral program",
@@ -407,6 +408,17 @@
     "yieldLabel": "Yield",
     "yieldAriaLabel": "Yield history trend",
     "since": "since {date}"
+  },
+  "TaxReports": {
+    "title": "Quarterly Tax Reports",
+    "exportCsv": "Export CSV",
+    "disclaimer": "This is an illustrative summary for record-keeping, not tax advice. Consult a tax professional for your filing.",
+    "columnQuarter": "Quarter",
+    "columnDeposits": "Deposits",
+    "columnWithdrawals": "Withdrawals",
+    "columnDistributions": "Distributions",
+    "columnRealizedGain": "Realized Gain",
+    "currencyFormat": "${amount}"
   },
   "PasswordResetEmail": {
     "subject": "Reset your Heliobond password",

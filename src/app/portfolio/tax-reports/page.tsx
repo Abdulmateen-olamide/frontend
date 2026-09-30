@@ -1,5 +1,10 @@
-import { TaxReports } from "@/screens/TaxReports";
+import { TaxReports } from '@/screens/TaxReports'
+import { RequireWallet } from '@/wallet/RequireWallet'
 
 export default function TaxReportsPage() {
-  return <TaxReports />;
+  return (
+    <RequireWallet>
+      <TaxReports />
+    </RequireWallet>
+  )
 }

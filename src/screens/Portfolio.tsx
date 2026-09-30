@@ -1,6 +1,7 @@
 'use client'
 
 import { memo, useState, useEffect, useCallback, type CSSProperties, type ReactNode } from 'react'
+import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { Button, StatBlock, LiquidityMeter, Card, AddressChip, useToast } from '../components'
 import { Helio } from '../brand/Helio'
@@ -398,9 +399,25 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
               justifyContent: 'space-between',
               alignItems: 'center',
               marginBottom: 8,
+              flexWrap: 'wrap',
+              gap: 12,
             }}
           >
-            <h3 style={cardTitle}>{t('activityTitle')}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <h3 style={cardTitle}>{t('activityTitle')}</h3>
+              <Link
+                href="/portfolio/tax-reports"
+                style={{
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--type-small)',
+                  fontWeight: 600,
+                  color: 'var(--ink-60)',
+                  textDecoration: 'none',
+                }}
+              >
+                {t('taxReports')} →
+              </Link>
+            </div>
             <span
               style={{
                 fontFamily: 'var(--font-body)',
