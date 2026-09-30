@@ -176,13 +176,19 @@ async function withTimeout<T>(promise: Promise<T>, message: string): Promise<T> 
 }
 
 /** Call a Soroban view function (no state mutation) and return the raw ScVal. */
+// One shared import so parallel simulations (fetchVaultLimits) all resolve the same SDK module.
+let sdkImport: Promise<typeof import('@stellar/stellar-sdk')> | undefined
+function loadSdk() {
+  return (sdkImport ??= import('@stellar/stellar-sdk'))
+}
+
 async function sorobanSimulate(
   sourceAddress: string,
   method: string,
   args: XdrTypes.ScVal[] = [],
   network: string = STELLAR_NETWORK,
 ): Promise<XdrTypes.ScVal> {
-  const { rpc, Contract, TransactionBuilder, Account } = await import('@stellar/stellar-sdk')
+  const { rpc, Contract, TransactionBuilder, Account } = await loadSdk()
 
   const server = new rpc.Server(RPC_URL, { allowHttp: allowHttpFor(RPC_URL) })
   const contract = new Contract(CONTRACT_ID!)

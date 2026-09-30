@@ -505,7 +505,7 @@ describe('view calls', () => {
         const method = call.functionName().toString()
         if (method === 'is_paused') return Promise.resolve(okSimulation(xdr.ScVal.scvBool(true)))
         if (method === 'get_deposit_lock_expiry') return Promise.resolve(okSimulation(nativeToScVal(1234567890n, { type: 'u64' })))
-        if (method === 'max_transaction_amount') return Promise.resolve(okSimulation(nativeToScVal(10000_0000000n, { type: 'i128' })))
+        if (method === 'max_transaction_amount') return Promise.resolve(okSimulation(nativeToScVal(1000_0000000n, { type: 'i128' })))
         if (method === 'get_utilization_bps') return Promise.resolve(okSimulation(nativeToScVal(500n, { type: 'u32' })))
         return Promise.resolve(okSimulation())
       })
