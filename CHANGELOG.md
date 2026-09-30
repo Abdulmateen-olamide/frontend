@@ -29,6 +29,8 @@ once it cuts its first tagged release (it currently ships continuously from
 
 ### Added
 
+- Full Right-to-Left (RTL) language support for Arabic with CSS logical properties, locale selection dropdown, and `dir="rtl"` attribute handling (#458).
+- Creator space page shell internationalization with dynamic translation catalogs (#45).
 - Bond watchlist — save bonds of interest without investing, reach them from the
   wallet menu at `/watchlist`, and see which are open for funding (#407).
 - Preemptive session timeout warning on auth forms, so in-progress form data
@@ -45,6 +47,10 @@ once it cuts its first tagged release (it currently ships continuously from
 
 ### Fixed
 
+- WCAG AA dark mode contrast for financial figures, deltas, and semantic tokens (`--growth`, `--ember`) (#503).
+- Wallet account menu keyboard navigation with roving tabindex and ARIA menu roles (#66).
+- Project-type chips radio semantics by removing conflicting radiogroup role wrapper (#70).
+- ScoreGauge value double ARIA announcement prevention with `aria-hidden` (#74).
 - Fixed transaction hashes wrapping awkwardly on mobile and made them easier to
   copy (#418).
 - Investment form leading zeros, a nav prop mismatch, and decimal rounding.
@@ -52,3 +58,7 @@ once it cuts its first tagged release (it currently ships continuously from
 - Password reset emails now include an explicit token expiration time (#354).
 - Investment hints, real-time fees, edit UX, and portfolio pending state.
 - Bond filters, search, sort, and comparison.
+
+### Removed
+
+- Unrelated Flask tasks app (`app.py`, `webauthn.py`, `templates/`, `static/`, `requirements.txt`) and stray PR documentation (#599).
