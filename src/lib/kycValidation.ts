@@ -164,7 +164,8 @@ export function validateAddress(values: AddressValues): AddressErrors {
   if (city && hasInvalidAddressCharacters(city)) errors.city = 'City contains invalid characters'
   if (state && hasInvalidAddressCharacters(state))
     errors.state = 'State / Province contains invalid characters'
-  if (zip && hasInvalidAddressCharacters(zip)) errors.zip = 'ZIP / Postal code contains invalid characters'
+  if (zip && hasInvalidAddressCharacters(zip))
+    errors.zip = 'ZIP / Postal code contains invalid characters'
   if (country && hasInvalidAddressCharacters(country))
     errors.country = 'Country contains invalid characters'
   if (apartment && hasInvalidAddressCharacters(apartment))

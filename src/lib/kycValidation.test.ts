@@ -78,7 +78,7 @@ describe('security validation edge cases', () => {
     expect(validateAddress({ ...valid, street: '1 Main St and 2nd Ave' })).toEqual({})
   })
 
-  it("escapes apostrophes in display output", () => {
+  it('escapes apostrophes in display output', () => {
     expect(escapeHtml("'")).toBe('&#39;')
   })
 })
