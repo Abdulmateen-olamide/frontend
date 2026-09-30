@@ -29,6 +29,7 @@ export interface ProjectDetailProps {
   verifiedMetadata?: boolean
   onInvest: () => Promise<string>
   onBack?: () => void
+  children?: React.ReactNode
 }
 
 export const ProjectDetail = memo(function ProjectDetail({
@@ -37,6 +38,7 @@ export const ProjectDetail = memo(function ProjectDetail({
   verifiedMetadata = true,
   onInvest,
   onBack,
+  children,
 }: ProjectDetailProps) {
   const t = useTranslations('ProjectDetail')
   const tc = useTranslations('Common')
@@ -601,6 +603,9 @@ export const ProjectDetail = memo(function ProjectDetail({
           </div>
         )}
       </section>
+
+      {/* Price history chart */}
+      {children}
     </main>
   )
 })

@@ -11,6 +11,7 @@ import { TransactionPendingError } from '../wallet/transactions'
 import { useTransactionFee } from '../wallet/useTransactionFee'
 import { formatDecimal, parseAmount } from '../lib/format'
 import { addPendingClaim } from '../wallet/pendingClaims'
+import { getExplorerTxUrl } from '../config/network'
 
 const LIQUID_SHARE = 236
 const TOTAL_LIQUID = 482
@@ -87,9 +88,7 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
   // Consolidate amount parsing with parseAmount helper (#417).
 
   const renderStep = (currentStep: WithdrawStep) => {
-    const txExplorerUrl = txHash
-      ? `https://stellar.expert/explorer/testnet/tx/${txHash}`
-      : undefined
+    const txExplorerUrl = txHash ? getExplorerTxUrl(txHash) : undefined
 
     switch (currentStep) {
       case 'amount':

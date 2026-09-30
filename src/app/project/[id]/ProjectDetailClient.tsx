@@ -62,18 +62,17 @@ export function ProjectDetailClient({ id, initialData }: ProjectDetailClientProp
   }
 
   return (
-    <>
-      <ProjectDetail
-        project={data.project}
-        detail={data.detail}
-        verifiedMetadata={data.verifiedMetadata}
-        onInvest={() => {
-          router.push('/connect')
-          return Promise.resolve('/connect')
-        }}
-        onBack={() => router.push('/explore')}
-      />
+    <ProjectDetail
+      project={data.project}
+      detail={data.detail}
+      verifiedMetadata={data.verifiedMetadata}
+      onInvest={() => {
+        router.push('/connect')
+        return Promise.resolve('/connect')
+      }}
+      onBack={() => router.push('/explore')}
+    >
       <PriceHistoryChart projectId={id} />
-    </>
+    </ProjectDetail>
   )
 }
