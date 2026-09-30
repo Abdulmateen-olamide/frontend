@@ -490,5 +490,74 @@
     "category_bridge": "This cross-chain transfer couldn't be completed. Contact support if it keeps happening.",
     "category_governance": "This vote or proposal can't be processed in its current state.",
     "unknown": "The contract rejected this transaction. Please try again, and contact support if it keeps happening."
+  },
+  "Telemetry": {
+    "label": "Telemetry",
+    "title": "Help us improve Heliobond",
+    "body": "May we send anonymous error reports and page-performance metrics? We never send wallet addresses, transaction hashes, emails or transaction data.",
+    "learnMore": "What we collect",
+    "accept": "Allow",
+    "decline": "No thanks",
+    "statusOn": "Allowed",
+    "statusOff": "Off",
+    "statusUndecided": "Not set"
+  },
+  "Metadata": {
+    "home": {
+      "title": "Sunlight made financial",
+      "description": "Own a piece of the energy transition from one dollar. A transparent pool funding verified green projects on Stellar."
+    },
+    "connect": {
+      "title": "Connect your wallet",
+      "description": "Connect a Stellar wallet to Heliobond, or open a demo session to try the investor flow without a browser extension."
+    },
+    "explore": {
+      "title": "Explore green energy bonds",
+      "description": "Browse verified solar, wind and hydro green energy projects. Filter by asset type and read the credit and green scores behind each bond."
+    },
+    "creator": {
+      "title": "Creator space",
+      "description": "Apply to the Heliobond project registry, build a green project listing, and track how the oracle scores it."
+    },
+    "deposit": {
+      "title": "Deposit",
+      "description": "Invest USDC into a verified green energy bond and mint your pool shares."
+    },
+    "learn": {
+      "title": "How Heliobond works",
+      "description": "A plain-language walkthrough of the green-bond pool: where the money goes, how the return is calculated, and who checks the numbers."
+    },
+    "portfolio": {
+      "title": "Your portfolio",
+      "description": "Your Heliobond position, projected return and deposit history."
+    },
+    "taxReports": {
+      "title": "Tax reports",
+      "description": "Download consolidated tax reports for your Heliobond investments."
+    },
+    "risk": {
+      "title": "Risk disclosure",
+      "description": "What can go wrong when you invest in Heliobond green bonds: liquidity, oracle scoring, and the loss scenarios we cannot rule out."
+    },
+    "verify": {
+      "title": "Verify everything",
+      "description": "The Heliobond contracts are public, the oracle cadence is documented, and the return formula is written out in plain sight."
+    },
+    "watchlist": {
+      "title": "Watchlist",
+      "description": "Bonds you have saved to follow, and which of them are open for funding."
+    },
+    "withdraw": {
+      "title": "Withdraw",
+      "description": "Redeem your Heliobond pool shares back into USDC."
+    },
+    "admin": {
+      "title": "Admin console",
+      "description": "Internal Heliobond console: vault stats, the project registry, oracle scoring and the creator whitelist."
+    },
+    "projectNotFound": {
+      "title": "Project not found",
+      "description": "The requested green energy project could not be found."
+    }
   }
 }
