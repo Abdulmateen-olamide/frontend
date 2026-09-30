@@ -17,6 +17,12 @@ const ERROR_CODE_MAP: Record<string, string> = {
   stellar_unreachable: 'Cannot reach Stellar network - showing cached data.',
   simulation_failed: 'Could not estimate the transaction - please try again.',
   tx_failed: 'Transaction did not go through - please try again.',
+  memo_too_long: 'Memo is too long — Stellar text memos must be 28 bytes or fewer.',
+  err_memo_too_long: 'Memo is too long — Stellar text memos must be 28 bytes or fewer.',
+  memo_length_exceeded: 'Memo is too long — Stellar text memos must be 28 bytes or fewer.',
+  invalid_memo: 'Invalid memo — text memos must be 28 bytes or fewer.',
+  tx_malformed: 'Transaction malformed — please check your transaction inputs and memo.',
+  op_malformed: 'Transaction operation malformed — please check your inputs.',
   internal_server_error: 'We are having trouble right now - please try again shortly.',
   server_error: 'We are having trouble right now - please try again shortly.',
   internal_error: 'Something went wrong on our side - please try again.',
@@ -30,6 +36,7 @@ const ERROR_CODE_MAP: Record<string, string> = {
 const FALLBACK_MESSAGE = 'Something went wrong - please try again.'
 
 const STELLAR_UNREACHABLE_MESSAGE = ERROR_CODE_MAP.stellar_unreachable
+const MEMO_TOO_LONG_MESSAGE = ERROR_CODE_MAP.memo_too_long
 
 // Keywords that indicate a network connectivity issue with the Stellar node.
 const NETWORK_ERROR_PATTERNS = [
@@ -59,6 +66,19 @@ const NETWORK_ERROR_PATTERNS = [
   'aborted',
   'abort',
 ]
+
+function looksLikeMemoError(message: string): boolean {
+  const lower = message.toLowerCase()
+  return (
+    lower.includes('memo') &&
+    (lower.includes('too long') ||
+      lower.includes('length') ||
+      lower.includes('exceed') ||
+      lower.includes('28') ||
+      lower.includes('byte') ||
+      lower.includes('malformed'))
+  )
+}
 
 function normalizeCode(code: string): string {
   return code
@@ -104,6 +124,11 @@ export function getFriendlyErrorMessage(codeOrMessage: string): string {
   if (contractMessage) return contractMessage
   const normalized = normalizeCode(codeOrMessage)
   if (ERROR_CODE_MAP[normalized]) return ERROR_CODE_MAP[normalized]
+
+  // If the error message describes a memo issue, return a clear memo error.
+  if (looksLikeMemoError(codeOrMessage)) {
+    return MEMO_TOO_LONG_MESSAGE
+  }
 
   // If the error looks like a network/connection issue, degrade gracefully.
   if (looksLikeNetworkError(codeOrMessage)) {
