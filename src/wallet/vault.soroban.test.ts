@@ -208,19 +208,36 @@ describe('signed transactions', () => {
     expect(rpcMock.getTransaction).toHaveBeenCalledWith(simulatedTx().hash().toString('hex'))
   })
 
-  it('withdraw(shares_amount: i128, min_usdc_return: i128)', async () => {
+  it('withdraw(shares_amount: i128, min_usdc_return: i128) fetches live price and clamps', async () => {
     const vault = await loadVault()
+    rpcMock.simulateTransaction.mockImplementation((tx: any) => {
+      const op = tx.operations[0]
+      const call = op.func.invokeContract()
+      const method = call.functionName().toString()
+      if (method === 'convert_to_assets') return Promise.resolve(okSimulation(nativeToScVal(10_500_000n, { type: 'i128' }))) // 1.05 price
+      if (method === 'get_portfolio') {
+        const i128 = (v: bigint) => nativeToScVal(v, { type: 'i128' })
+        return Promise.resolve(okSimulation(xdr.ScVal.scvMap([
+          new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('shares'), val: i128(150_000_000n) }), // 15 shares max
+          new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('usdc_value'), val: i128(157_500_000n) })
+        ])))
+      }
+      return Promise.resolve(okSimulation())
+    })
+
     const result = await settle(vault.submitWithdraw(200, USER, sign))
 
-    expect(result.hash).toBe(simulatedTx().hash().toString('hex'))
-    expect(result.queued).toBe(false)
-    expect(invocation(simulatedTx())).toEqual({
+    // 200 USDC @ 1.05 = 190.47 shares. Clamps to 15 shares.
+    // Adjusted amount = 15 * 1.05 = 15.75 USDC.
+    // Min return = 15.75 * 0.995 = 15.67125 USDC.
+    const call = invocation(simulatedTx(2))
+    expect(call).toEqual({
       contract: CONTRACT_ID,
       method: 'withdraw',
       argTypes: ['scvI128', 'scvI128'],
       args: [
-        BigInt(Math.round((200 / vault.SHARE_PRICE) * 1e7)),
-        BigInt(Math.floor(200 * 0.995 * 1e7)),
+        150_000_000n,
+        BigInt(Math.floor(15.75 * 0.995 * 1e7)),
       ],
     })
   })

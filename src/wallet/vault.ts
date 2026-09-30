@@ -751,7 +751,31 @@ export async function submitWithdraw(
 
   const { nativeToScVal, xdr, scValToNative } = await import('@stellar/stellar-sdk')
 
-  const shares = Math.round((amount / cachedSharePrice) * SCALE)
+  let priceStr: string
+  let portfolio: OnChainPortfolio
+  try {
+    [priceStr, portfolio] = await Promise.all([
+      fetchSharePrice(address),
+      fetchPortfolio(address),
+    ])
+  } catch (e) {
+    throw new Error('No live share price available')
+  }
+
+  const livePrice = Number(priceStr)
+  if (!livePrice || isNaN(livePrice)) {
+    throw new Error('No live share price available')
+  }
+
+  let shares = Math.floor((amount / livePrice) * SCALE)
+  const maxShares = Math.floor(portfolio.shares * SCALE)
+
+  if (shares >= maxShares) {
+    shares = maxShares
+    // Recalculate amount based on the exact shares being burned so minUsdcReturn calculation matches
+    amount = (shares / SCALE) * livePrice
+  }
+
   const minUsdcReturn = Math.floor(amount * (1 - slippageTolerance) * SCALE)
   const { hash, confirmation: conf } = await invokeSigned(
     address,
