@@ -499,11 +499,16 @@ describe('view calls', () => {
   describe('fetchVaultLimits', () => {
     it('fetches and scales vault limits from the contract', async () => {
       const vault = await loadVault()
-      rpcMock.simulateTransaction
-        .mockResolvedValueOnce(okSimulation(xdr.ScVal.scvBool(true))) // is_paused
-        .mockResolvedValueOnce(okSimulation(nativeToScVal(1234567890n, { type: 'u64' }))) // get_deposit_lock_expiry
-        .mockResolvedValueOnce(okSimulation(nativeToScVal(10000_0000000n, { type: 'i128' }))) // max_transaction_amount
-        .mockResolvedValueOnce(okSimulation(nativeToScVal(500n, { type: 'u32' }))) // get_utilization_bps
+      rpcMock.simulateTransaction.mockImplementation((tx: any) => {
+        const op = tx.operations[0]
+        const call = op.func.invokeContract()
+        const method = call.functionName().toString()
+        if (method === 'is_paused') return Promise.resolve(okSimulation(xdr.ScVal.scvBool(true)))
+        if (method === 'get_deposit_lock_expiry') return Promise.resolve(okSimulation(nativeToScVal(1234567890n, { type: 'u64' })))
+        if (method === 'max_transaction_amount') return Promise.resolve(okSimulation(nativeToScVal(10000_0000000n, { type: 'i128' })))
+        if (method === 'get_utilization_bps') return Promise.resolve(okSimulation(nativeToScVal(500n, { type: 'u32' })))
+        return Promise.resolve(okSimulation())
+      })
 
       const limits = await vault.fetchVaultLimits(USER)
       expect(limits.paused).toBe(true)
