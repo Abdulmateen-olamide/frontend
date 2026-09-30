@@ -65,6 +65,9 @@ export function TopBar() {
   }, [router])
 
   useEffect(() => {
+    // The route is an external navigation signal; close the transient menu
+    // after navigation so it cannot remain open over the next page.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMobileMenuOpen(false)
   }, [pathname])
 
