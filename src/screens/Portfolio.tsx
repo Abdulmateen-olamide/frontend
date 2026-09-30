@@ -5,7 +5,15 @@ import { TransactionPendingError } from '../wallet/transactions'
 import { memo, useState, useEffect, useCallback, type CSSProperties, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
-import { Button, StatBlock, LiquidityMeter, Card, AddressChip, useToast } from '../components'
+import {
+  Button,
+  StatBlock,
+  LiquidityMeter,
+  Card,
+  AddressChip,
+  Pagination,
+  useToast,
+} from '../components'
 import { Helio } from '../brand/Helio'
 import { useWallet } from '../wallet/WalletProvider'
 import { getPendingClaims, removePendingClaim, type PendingClaim } from '../wallet/pendingClaims'
@@ -13,10 +21,12 @@ import { submitClaim } from '../wallet/vault'
 import { formatDecimal } from '../lib/format'
 import { OnChainPosition } from './OnChainPosition'
 import { usePortfolio } from '../hooks/usePortfolio'
+import { paginateItems } from '../lib/paginate'
 
 const MemoizedHelio = memo(Helio)
 
 const MemoizedLiquidityMeter = memo(LiquidityMeter)
+const ACTIVITY_PAGE_SIZE = 10
 
 /**
  * Portfolio — calm dashboard. Headline value with delta since deposit, the
@@ -44,6 +54,9 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
 
   const [pendingClaims, setPendingClaims] = useState<PendingClaim[]>([])
   const [claiming, setClaiming] = useState(false)
+  const [activityPage, setActivityPage] = useState(1)
+  const activityPageCount = Math.max(1, Math.ceil(activity.length / ACTIVITY_PAGE_SIZE))
+  const visibleActivityPage = Math.min(activityPage, activityPageCount)
 
   const refreshClaims = useCallback(() => {
     setPendingClaims(getPendingClaims(address ?? undefined))
@@ -511,7 +524,7 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
               {t('activityNote')}
             </span>
           </div>
-          {activity.map((a, i) => (
+          {paginateItems(activity, visibleActivityPage, ACTIVITY_PAGE_SIZE).map((a, i) => (
             <div
               key={a.hash}
               style={{
@@ -568,6 +581,13 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
               </div>
             </div>
           ))}
+          <Pagination
+            currentPage={visibleActivityPage}
+            totalPages={activityPageCount}
+            totalItems={activity.length}
+            pageSize={ACTIVITY_PAGE_SIZE}
+            onPageChange={setActivityPage}
+          />
         </Card>
       </div>
     </main>
