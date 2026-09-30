@@ -241,7 +241,7 @@ describe('signed transactions', () => {
       return Promise.resolve(okSimulation())
     })
 
-    const result = await settle(vault.submitWithdraw(200, USER, sign))
+    await settle(vault.submitWithdraw(200, USER, sign))
 
     // 200 USDC @ 1.05 = 190.47 shares. Clamps to 15 shares.
     // Adjusted amount = 15 * 1.05 = 15.75 USDC.
