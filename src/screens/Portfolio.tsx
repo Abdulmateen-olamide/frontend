@@ -13,6 +13,7 @@ import { submitClaim } from '../wallet/vault'
 import { formatDate, formatDecimal } from '../lib/format'
 import { OnChainPosition } from './OnChainPosition'
 import { usePortfolio } from '../hooks/usePortfolio'
+import { PortfolioPerformanceChart } from '../components/PortfolioPerformanceChart'
 
 const MemoizedHelio = memo(Helio)
 
@@ -265,6 +266,7 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
       </div>
 
       <OnChainPosition />
+      {address && <PortfolioPerformanceChart address={address} />}
 
       {/* Pending queued withdrawals */}
       <Card style={{ padding: 22, marginBottom: 28 }}>
