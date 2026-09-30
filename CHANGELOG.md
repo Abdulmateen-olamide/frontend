@@ -61,6 +61,7 @@ once it cuts its first tagged release (it currently ships continuously from
 
 ### Fixed
 
+- Concurrent 401s racing each other and the expiry timer on /auth/refresh signing the user out.
 - WCAG AA dark mode contrast for financial figures, deltas, and semantic tokens (`--growth`, `--ember`) (#503).
 - Wallet account menu keyboard navigation with roving tabindex and ARIA menu roles (#66).
 - Project-type chips radio semantics by removing conflicting radiogroup role wrapper (#70).
