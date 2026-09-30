@@ -16,8 +16,12 @@ describe('session client recovery boundaries (#723)', () => {
   it('requests and verifies a message challenge', async () => {
     const fetchMock = vi.mocked(fetch)
     fetchMock
-      .mockResolvedValueOnce(new Response(JSON.stringify({ challenge: 'sign-me', type: 'message' }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ token: 'session', expiresIn: 60 }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ challenge: 'sign-me', type: 'message' }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ token: 'session', expiresIn: 60 }), { status: 200 }),
+      )
 
     const challenge = await requestChallenge('GABC')
     const session = await verifyChallenge('GABC', challenge, 'signature')
