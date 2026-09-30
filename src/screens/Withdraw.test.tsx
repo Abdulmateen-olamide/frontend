@@ -19,6 +19,7 @@ vi.mock('../wallet/WalletProvider', () => ({
 
 vi.mock('../wallet/vault', () => ({
   submitWithdraw: vi.fn(),
+  estimateTransactionFee: vi.fn().mockResolvedValue(0.00001),
 }))
 
 vi.mock('../components/Toast', () => ({
@@ -77,7 +78,11 @@ function mockClipboard() {
 
 describe('Withdraw', () => {
   beforeEach(() => {
-    vi.mocked(submitWithdraw).mockResolvedValue(FULL_TX_HASH)
+    vi.mocked(submitWithdraw).mockResolvedValue({
+      hash: FULL_TX_HASH,
+      queued: false,
+      toString: () => FULL_TX_HASH,
+    })
   })
 
   test('shows a compact transaction chip on success while preserving full hash actions', async () => {
@@ -86,8 +91,8 @@ describe('Withdraw', () => {
 
     render(<Withdraw onDone={onDone} onBack={vi.fn()} />)
 
-    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '50' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Withdraw $50' }))
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '150' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw $150' }))
 
     await expect(
       screen.findByRole('heading', { name: 'Withdrawal settled' }),
@@ -107,5 +112,35 @@ describe('Withdraw', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to portfolio' }))
     expect(onDone).toHaveBeenCalledTimes(1)
+  })
+
+  test('shows liquidity warning before submit when amount exceeds liquid balance', async () => {
+    render(<Withdraw onDone={vi.fn()} onBack={vi.fn()} />)
+
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '300' } })
+
+    expect(
+      screen.getByText(/Requested amount exceeds immediately available liquid balance/),
+    ).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Enqueue withdrawal for $300.00' })).toBeEnabled()
+  })
+
+  test('renders queued state and owed amount without inventing a position', async () => {
+    vi.mocked(submitWithdraw).mockResolvedValue({
+      hash: FULL_TX_HASH,
+      queued: true,
+      estimatedAmount: 300,
+      toString: () => FULL_TX_HASH,
+    })
+
+    render(<Withdraw onDone={vi.fn()} onBack={vi.fn()} />)
+
+    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '300' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enqueue withdrawal for $300.00' }))
+
+    await expect(screen.findByRole('heading', { name: 'Withdrawal queued' })).resolves.toBeVisible()
+
+    expect(screen.getByText('Queued — owed amount $300.00 USDC')).toBeVisible()
+    expect(screen.getByText('abcdef…567890')).toBeVisible()
   })
 })

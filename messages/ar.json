@@ -67,9 +67,9 @@
   "Landing": {
     "eyebrow": "سندات خضراء · على Stellar",
     "title": "امتلك جزءاً من انتقال الطاقة.",
-    "titleAccent": " من دولار واحد.",
+    "titleAccent": " استثمر في مشاريع خضراء موثقة.",
     "sub": "مجمع شفاف يموّل المشاريع الخضراء المؤكدة. كل رقم يمكن تتبعه على السلسلة بضغطتين — لا مفاجآت أبداً.",
-    "ctaStart": "ابدأ بدولار واحد",
+    "ctaStart": "استكشف خيارات الاستثمار",
     "ctaExplore": "شاهد أين يعمل المجمع",
     "poolValue": "قيمة المجمع",
     "projectsFunded": "المشاريع الممولة",
@@ -78,7 +78,7 @@
     "howTitle": "كيف يعمل",
     "howSub": "مجمع واحد، العديد من المشاريع. تودع USDC وتحصل على حصص في محفظة مختارة ومقيّمة من Oracle.",
     "step1Title": "إيداع USDC",
-    "step1Body": "من دولار واحد. ترى دائماً ما تحصل عليه قبل التوقيع.",
+    "step1Body": "يظهر الحد الأدنى الحالي قبل تأكيد الإيداع.",
     "step2Title": "استلام الحصص",
     "step2Body": "حصص — تقنياً رموز SEP-41 تسمى HBS. حصتك في المجمع بأكمله.",
     "step3Title": "المجمع يموّل المشاريع",
@@ -157,7 +157,7 @@
     "liquidLine": "اليوم المجمع <b>سيولة بنسبة 29%</b> — يمكنك سحب حصتك السيولة في أي وقت.",
     "investCta": "استثمر {amount} USDC",
     "investCtaEmpty": "استثمر",
-    "reasonMin": "أدخل مبلغاً لا يقل عن 1 USDC",
+    "reasonMin": "أدخل مبلغاً لا يقل عن {min} USDC",
     "capMessage": "تحتفظ برصيد قدره ${cap}. يمكنك استثمار هذا المبلغ اليوم.",
     "maxChip": "الحد الأقصى",
     "depositMaxAvailable": "استثمر الحد الأقصى المتاح",
@@ -213,7 +213,8 @@
     "referralLink": "Your referral link",
     "referralCaption": "Share your link to invite friends. You both get rewards when they invest.",
     "copyLink": "Copy link",
-    "copied": "Copied"
+    "copied": "Copied",
+    "taxReports": "التقارير الضريبية"
   },
   "Withdraw": {
     "h1": "سحب من المجمع",
@@ -225,7 +226,7 @@
     "withdrawCta": "سحب ${amount}",
     "withdrawCtaEmpty": "سحب",
     "reasonExceeds": "المبلغ يتجاوز ما هو سيول حالياً — استخدم الحد الأقصى",
-    "reasonMin": "أدخل مبلغاً لا يقل عن 1 USDC",
+    "reasonMin": "أدخل مبلغاً لا يقل عن {min} USDC",
     "cancel": "إلغاء",
     "pendingH1": "معالجة سحبك",
     "pendingSub": "عادةً حوالي 5 ثوانٍ على Stellar. tx 4d2c…9af1 ↗",
@@ -388,6 +389,9 @@
     "backAriaHidden": "←",
     "backLabel": "رجوع إلى المشاريع",
     "verifiedSince": "مبدع موثق · منذ {since}",
+    "verifiedMetadata": "بيانات وصفية موثقة",
+    "metadataMismatch": "عدم تطابق البيانات الوصفية",
+    "unverifiedMetadata": "بيانات وصفية غير موثقة",
     "builtBy": "أنشأه",
     "scoresTitle": "درجات موثقة من Oracle",
     "creditLabel": "جودة الائتمان",
@@ -409,7 +413,31 @@
     "priceHistory": "سجل الأسعار",
     "priceLabel": "السعر",
     "yieldHistory": "سجل العائد",
-    "yieldLabel": "العائد"
+    "yieldLabel": "العائد",
+    "yieldHelpLabel": "حول عائد السند",
+    "yieldHelp": "هذا هو العائد الإرشادي الحالي للسند. اضغط لمعرفة المزيد؛ فهو ليس عائداً مضموناً."
+  },
+  "PriceHistory": {
+    "title": "تسعير السند",
+    "caption": "ملاحظات موثقة من Oracle، {range}.",
+    "ariaLabel": "سجل أسعار السند",
+    "priceLabel": "السعر",
+    "priceUnit": "% من القيمة الاسمية",
+    "priceAriaLabel": "اتجاه سجل الأسعار",
+    "yieldLabel": "العائد",
+    "yieldAriaLabel": "اتجاه سجل العوائد",
+    "since": "منذ {date}"
+  },
+  "TaxReports": {
+    "title": "التقارير الضريبية الفصلية",
+    "exportCsv": "تصدير CSV",
+    "disclaimer": "هذا ملخص توضيحي لحفظ السجلات، وليس نصيحة ضريبية. استشر متخصصاً ضريبياً لإقرارك.",
+    "columnQuarter": "الربع",
+    "columnDeposits": "الإيداعات",
+    "columnWithdrawals": "السحوبات",
+    "columnDistributions": "التوزيعات",
+    "columnRealizedGain": "الربح المحقق",
+    "currencyFormat": "{amount} $"
   },
   "PasswordResetEmail": {
     "subject": "إعادة تعيين كلمة مرور Heliobond",
@@ -476,5 +504,117 @@
     "statusOpen": "Open for funding",
     "statusUpcoming": "Not yet available",
     "notYetAvailable": "We'll flag it here when it opens."
+  },
+  "ContractErrors": {
+    "vault_AmountNotPositive": "أدخل مبلغًا أكبر من صفر.",
+    "vault_DepositExceedsMaximum": "هذا الإيداع يتجاوز الحد الأقصى للإيداع الواحد. جرّب مبلغًا أصغر.",
+    "vault_DepositBelowMinimum": "هذا الإيداع أقل من الحد الأدنى. جرّب مبلغًا أكبر.",
+    "vault_WithdrawBelowMinimum": "هذا السحب أقل من الحد الأدنى. جرّب سحب حصص أكثر.",
+    "vault_SharesNotPositive": "أدخل عدد حصص أكبر من صفر.",
+    "vault_WithdrawalExceedsLimit": "جرّب مبلغًا أصغر — السيولة محدودة حاليًا.",
+    "vault_WithdrawalExceedsLimitUtil": "جرّب مبلغًا أصغر — السيولة محدودة حاليًا (نسبة الاستخدام {utilization}%).",
+    "vault_InsufficientLiquid": "لا توجد سيولة كافية للدفع الآن. جرّب مبلغًا أصغر أو انضم إلى قائمة انتظار السحب.",
+    "vault_InsufficientLiquidUtil": "لا توجد سيولة كافية للدفع الآن (نسبة الاستخدام {utilization}%). جرّب مبلغًا أصغر أو انضم إلى قائمة انتظار السحب.",
+    "vault_SlippageLimitExceeded": "تحرّك السعر أكثر من هامش الانزلاق المسموح. حدّث السعر أو ارفع الهامش ثم حاول مجددًا.",
+    "vault_Paused": "الخزينة متوقفة مؤقتًا للصيانة. يُرجى المحاولة لاحقًا.",
+    "vault_RegistryPaused": "الاستثمارات الجديدة متوقفة حاليًا. يُرجى المحاولة لاحقًا.",
+    "vault_DepositLocked": "إيداعك الأخير لا يزال ضمن فترة القفل. يمكنك السحب بعد انتهائها.",
+    "vault_MaxSupplyExceeded": "وصل الصندوق إلى حجمه الأقصى، لذا لا يمكن قبول هذا الإيداع. جرّب مبلغًا أصغر أو عد لاحقًا.",
+    "vault_InvestmentCapExceeded": "وصل هذا المشروع إلى سقف التمويل. اختر مبلغًا أصغر أو مشروعًا آخر.",
+    "vault_ExceedsMaxTransactionAmount": "هذا المبلغ يتجاوز حد المعاملة الواحدة. قسّمه إلى معاملات أصغر.",
+    "vault_TransferToVaultBlocked": "لا يمكن إرسال الحصص إلى عنوان الخزينة. تحقق من المستلم وحاول مجددًا.",
+    "vault_FundingRoundActive": "تحويل الحصص متوقف أثناء جولة التمويل. حاول مجددًا بعد انتهائها.",
+    "vault_ProjectNotFound": "لم نعثر على هذا المشروع. حدّث الصفحة وحاول مجددًا.",
+    "vault_BelowMinCreditQuality": "الجودة الائتمانية لهذا المشروع أقل من الحد الأدنى للصندوق، لذا لا يمكن تمويله.",
+    "vault_BelowMinGreenImpact": "الأثر البيئي لهذا المشروع أقل من الحد الأدنى للصندوق، لذا لا يمكن تمويله.",
+    "vault_InsufficientInsurance": "صندوق التأمين لا يستطيع تغطية هذه المطالبة حاليًا.",
+    "vault_InsuranceAlreadyClaimed": "تمت المطالبة بالتأمين لهذا المشروع مسبقًا.",
+    "vault_InsufficientLiquidYield": "لا توجد سيولة كافية لدفع عائدك الآن. يُرجى المحاولة لاحقًا.",
+    "vault_ProjectAlreadySettled": "تمت تسوية هذا المشروع وأُغلق أمام أي نشاط جديد.",
+    "vault_ProjectNotMature": "لم يصل هذا المشروع إلى تاريخ الاستحقاق بعد.",
+    "vault_SelfFundingNotAllowed": "لا يمكن تمويل هذا المشروع من حساب مسؤول الخزينة نفسه.",
+    "vault_SelfTransferNotAllowed": "لا يمكنك التحويل إلى عنوانك نفسه. اختر مستلمًا آخر.",
+    "registry_Paused": "سجل المشاريع متوقف حاليًا. يُرجى المحاولة لاحقًا.",
+    "registry_ProjectNotFound": "لم نعثر على هذا المشروع. حدّث الصفحة وحاول مجددًا.",
+    "registry_ProjectArchived": "هذا المشروع مؤرشف ولا يمكن تعديله.",
+    "registry_ProjectHasInvestments": "لدى هذا المشروع استثمارات نشطة، لذا لا يمكن حذفه.",
+    "registry_ProjectNotMature": "لم يصل هذا المشروع إلى تاريخ الاستحقاق بعد.",
+    "registry_NotWhitelisted": "هذا العنوان غير مصرّح له بإنشاء المشاريع بعد.",
+    "registry_UpdateTooFrequent": "تم تحديث هذا المشروع مؤخرًا. يُرجى الانتظار قليلًا قبل تحديثه مجددًا.",
+    "category_admin": "هذا الإجراء مقتصر على المسؤولين المصرّح لهم.",
+    "category_unavailable": "هذه الميزة غير متاحة حاليًا. يُرجى المحاولة لاحقًا.",
+    "category_invalid": "إحدى القيم غير صالحة. تحقق من مدخلاتك وحاول مجددًا.",
+    "category_bridge": "تعذّر إكمال هذا التحويل عبر السلاسل. تواصل مع الدعم إذا تكرر ذلك.",
+    "category_governance": "لا يمكن معالجة هذا التصويت أو الاقتراح في حالته الحالية.",
+    "unknown": "رفض العقد هذه المعاملة. حاول مجددًا وتواصل مع الدعم إذا تكرر ذلك."
+  },
+  "Telemetry": {
+    "label": "التتبع",
+    "title": "ساعدنا في تحسين Heliobond",
+    "body": "هل يمكننا إرسال تقارير أخطاء مجهولة الهوية وبيانات أداء الصفحة؟ لا نرسل أبداً عناوين المحافظ أو تجزئات المعاملات أو البريد الإلكتروني أو بيانات المعاملات.",
+    "learnMore": "ما الذي نجمعه",
+    "accept": "السماح",
+    "decline": "لا، شكراً",
+    "statusOn": "مسموح به",
+    "statusOff": "معطّل",
+    "statusUndecided": "غير محدد"
+  },
+  "Metadata": {
+    "home": {
+      "title": "طاقة شمسية تتحول إلى تمويل",
+      "description": "شارك في التحول إلى الطاقة النظيفة عبر مجمع شفاف يمول مشاريع خضراء موثقة على Stellar."
+    },
+    "connect": {
+      "title": "وصّل محفظتك",
+      "description": "وصّل محفظة Stellar إلى Heliobond، أو افتح جلسة تجريبية لتجربة رحلة المستثمر دون إضافة متصفح."
+    },
+    "explore": {
+      "title": "استكشف سندات الطاقة الخضراء",
+      "description": "تصفّح مشاريع الطاقة الشمسية والرياح والمائية المُتحقَّق منها. صفِّ حسب نوع الأصل واقرأ تقييمات الائتمان والأثر البيئي."
+    },
+    "creator": {
+      "title": "فضاء المبدعين",
+      "description": "قدّم طلباً إلى سجل مشاريع Heliobond، وأنشئ ملف مشروع أخضر، وتابع تقييم Oracle له."
+    },
+    "deposit": {
+      "title": "إيداع",
+      "description": "استثمر USDC في سند أخضر مُتحقَّق منه واحصل على حصصك في التجمّع."
+    },
+    "learn": {
+      "title": "كيف يعمل Heliobond",
+      "description": "شرح بلغة واضحة لتجمّع السندات الخضراء: إلى أين يذهب المال، وكيف يُحتسب العائد، ومن يتحقق من الأرقام."
+    },
+    "portfolio": {
+      "title": "محفظتك",
+      "description": "مركزك في Heliobond والعائد المتوقّع وسجل الإيداعات."
+    },
+    "taxReports": {
+      "title": "التقارير الضريبية",
+      "description": "حمّل التقارير الضريبية الموحّدة لاستثماراتك في Heliobond."
+    },
+    "risk": {
+      "title": "إفصاح المخاطر",
+      "description": "ما الذي قد يسوء عند الاستثمار في سندات Heliobond الخضراء: السيولة، وتقييم Oracle، وسيناريوهات الخسارة التي لا يمكن استبعادها."
+    },
+    "verify": {
+      "title": "تحقّق من كل شيء",
+      "description": "عقود Heliobond عامة، وتُوثَّق وتيرة Oracle، وصيغة العائد مكتوبة أمامك بوضوح."
+    },
+    "watchlist": {
+      "title": "قائمة المتابعة",
+      "description": "السندات التي حفظتها للمتابعة، وأيها يقبل التمويل حالياً."
+    },
+    "withdraw": {
+      "title": "سحب",
+      "description": "استبدل حصصك في Heliobond بـ USDC."
+    },
+    "admin": {
+      "title": "لوحة الإدارة",
+      "description": "لوحة Heliobond الداخلية: إحصاءات الخزنة، وسجل المشاريع، وتقييم Oracle، وقائمة المبدعين المعتمدين."
+    },
+    "projectNotFound": {
+      "title": "المشروع غير موجود",
+      "description": "تعذّر العثور على مشروع الطاقة الخضراء المطلوب."
+    }
   }
 }

@@ -17,6 +17,7 @@ import {
   type OracleUpdate,
 } from '@/data/creator'
 import { formatMoney } from '@/lib/format'
+import { getExplorerUrl } from '@/config/network'
 
 /**
  * CreatorDashboard — the creator's calm read on their project. Funding received,
@@ -249,6 +250,7 @@ function UpdateRow({ update, first }: UpdateRowProps) {
   const up = update.to >= update.from
   const metricKey = update.metric === 'green' ? 'dashMetricGreenLabel' : 'dashMetricCreditLabel'
   const metricLabel = t(metricKey)
+  const explorerUrl = getExplorerUrl(update.tx)
   return (
     <div
       style={{
@@ -288,20 +290,33 @@ function UpdateRow({ update, first }: UpdateRowProps) {
           {update.date}
         </div>
       </div>
-      <a
-        href="https://stellar.expert"
-        target="_blank"
-        rel="noreferrer"
-        style={{
-          fontFamily: 'var(--font-data)',
-          fontSize: 'var(--type-eyebrow)',
-          color: 'var(--ink-40)',
-          whiteSpace: 'nowrap',
-          textDecoration: 'none',
-        }}
-      >
-        {update.tx} ↗
-      </a>
+      {explorerUrl ? (
+        <a
+          href={explorerUrl}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            fontFamily: 'var(--font-data)',
+            fontSize: 'var(--type-eyebrow)',
+            color: 'var(--ink-40)',
+            whiteSpace: 'nowrap',
+            textDecoration: 'none',
+          }}
+        >
+          {update.tx} ↗
+        </a>
+      ) : (
+        <span
+          style={{
+            fontFamily: 'var(--font-data)',
+            fontSize: 'var(--type-eyebrow)',
+            color: 'var(--ink-40)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {update.tx}
+        </span>
+      )}
     </div>
   )
 }

@@ -294,6 +294,5 @@ export const HB_DATA: HeliobondData = {
   },
   projects: INITIAL_PROJECTS,
   activity: [],
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  search: (_query: string) => INITIAL_PROJECTS,
+  search: () => INITIAL_PROJECTS,
 }

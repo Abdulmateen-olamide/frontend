@@ -1,4 +1,5 @@
 import { type CSSProperties } from 'react'
+import PropTypes from 'prop-types'
 
 /**
  * Heliobond StatBlock — a labeled figure with optional signed delta. Money uses
@@ -130,4 +131,17 @@ export function StatBlock({
   ) : (
     <div style={wrapperStyle}>{inner}</div>
   )
+}
+
+StatBlock.propTypes = {
+  label: PropTypes.string.isRequired,
+  value: PropTypes.string.isRequired,
+  decimals: PropTypes.string,
+  delta: PropTypes.string,
+  deltaDirection: PropTypes.oneOf(['up', 'down']),
+  unit: PropTypes.string,
+  size: PropTypes.oneOf(['sm', 'md', 'lg']),
+  href: PropTypes.string,
+  style: PropTypes.object,
+  stackOnMobile: PropTypes.bool,
 }
