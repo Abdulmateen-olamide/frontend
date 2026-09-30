@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@/test/render'
+import { fireEvent, render, screen, waitFor } from '@/test/render'
 import { TopBar } from './TopBar'
 
 vi.mock('next/navigation', () => ({
@@ -53,5 +53,22 @@ describe('TopBar theme toggle', () => {
         'false',
       )
     })
+  })
+})
+
+describe('TopBar mobile navigation (#714)', () => {
+  it('opens the mobile menu with all primary destinations and closes on Escape', () => {
+    render(<TopBar />)
+    const menu = screen.getByRole('button', { name: 'Open site menu' })
+    fireEvent.click(menu)
+
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    for (const label of ['explore', 'how', 'learn', 'creator']) {
+      expect(screen.getByRole('menuitem', { name: new RegExp(label, 'i') })).toBeInTheDocument()
+    }
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(menu).toHaveFocus()
   })
 })
