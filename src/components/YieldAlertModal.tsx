@@ -44,12 +44,12 @@ export function YieldAlertModal({
   const firstInputRef = useRef<HTMLInputElement>(null)
   useFocusTrap(open, dialogRef, firstInputRef, onClose)
 
-  // Reset form when modal opens with new values.
+  // Initialize the editable form when a dialog is opened or its source alert changes.
   useEffect(() => {
-    if (open) {
-      setThreshold(String(initialThreshold))
-      setOperator(initialOperator)
-    }
+    if (!open) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setThreshold(String(initialThreshold))
+    setOperator(initialOperator)
   }, [open, initialThreshold, initialOperator])
 
   const handleSave = useCallback(() => {
