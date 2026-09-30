@@ -172,9 +172,9 @@ describe('projectedReturn — simple interest', () => {
     const y5 = roundToCents(projectedReturn(amount, rate, 5))
     const y10 = roundToCents(projectedReturn(amount, rate, 10))
 
-    expect(y1).toBe(6.50)
-    expect(y5).toBe(32.50)
-    expect(y10).toBe(65.00)
+    expect(y1).toBe(6.5)
+    expect(y5).toBe(32.5)
+    expect(y10).toBe(65.0)
   })
 })
 
@@ -191,7 +191,7 @@ describe('roundToCents — monetary precision', () => {
   })
 
   it('rounds down correctly: 1.004 → 1.00', () => {
-    expect(roundToCents(1.004)).toBe(1.00)
+    expect(roundToCents(1.004)).toBe(1.0)
   })
 
   it('handles zero', () => {
@@ -278,11 +278,7 @@ describe('Integration: full deposit preview calculation', () => {
    * input amount. This integration check ensures the individual pieces compose
    * correctly with no unexpected rounding gaps.
    */
-  function depositPreview(
-    amount: number,
-    sharePrice: number,
-    projectedRate: number,
-  ) {
+  function depositPreview(amount: number, sharePrice: number, projectedRate: number) {
     const fee = DEPOSIT_FEE_USDC
     const proceeds = roundToCents(amount - fee)
     const shares = amount / sharePrice
@@ -297,9 +293,9 @@ describe('Integration: full deposit preview calculation', () => {
     expect(preview.fee).toBe(0.01)
     expect(preview.proceeds).toBe(99.99)
     expect(preview.shares).toBe(100)
-    expect(preview.return1y).toBe(6.00)
-    expect(preview.return5y).toBe(30.00)
-    expect(preview.return10y).toBe(60.00)
+    expect(preview.return1y).toBe(6.0)
+    expect(preview.return5y).toBe(30.0)
+    expect(preview.return10y).toBe(60.0)
   })
 
   it('250 USDC at 1.05 share price, 5.5% rate', () => {

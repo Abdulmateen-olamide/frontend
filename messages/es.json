@@ -393,8 +393,7 @@
     "calcSummary": "How is this calculated?",
     "calcFormula": "rentabilidad esperada = inversión × (crédito + impacto verde) ÷ 200 — consulta el contrato ↗",
     "investCta": "Invest in the pool that funds this",
-    "investNote": "You invest in the shared pool, which funds this project alongside others — not a per-project checkout."
-  ,
+    "investNote": "You invest in the shared pool, which funds this project alongside others — not a per-project checkout.",
     "pricingTitle": "Precio del bono",
     "priceHistory": "Historial del precio",
     "priceLabel": "Precio",

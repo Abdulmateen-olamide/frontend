@@ -27,9 +27,9 @@ not set, so the app works out of the box without a running backend.
 
 ## Environment configuration
 
-| Variable | Required | Example | Purpose |
-|---|---|---|---|
-| `NEXT_PUBLIC_API_URL` | No | `http://localhost:3001` | Backend base URL. When absent every call uses local fixture data and no HTTP request is made. |
+| Variable              | Required | Example                 | Purpose                                                                                       |
+| --------------------- | -------- | ----------------------- | --------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_API_URL` | No       | `http://localhost:3001` | Backend base URL. When absent every call uses local fixture data and no HTTP request is made. |
 
 Copy `.env.example` to `.env.local` and set `NEXT_PUBLIC_API_URL` to point at
 your local or staging backend before running `bun run dev`.
@@ -65,10 +65,10 @@ Returned by [`getProject`](#getproject).
 
 ```ts
 interface Investment {
-  id: number          // Server-assigned investment ID
-  projectId: number   // The project invested in
-  amount: number      // USDC amount
-  projectUrl: string  // Canonical URL, e.g. "/projects/42"
+  id: number // Server-assigned investment ID
+  projectId: number // The project invested in
+  amount: number // USDC amount
+  projectUrl: string // Canonical URL, e.g. "/projects/42"
 }
 ```
 
@@ -79,10 +79,10 @@ Returned by [`createInvestment`](#createinvestment).
 ```ts
 interface PaginatedProjectsResponse {
   projects: Project[]
-  total: number     // Total matching records (not just this page)
-  page: number      // 1-indexed current page
-  pageSize: number  // Items per page
-  hasMore: boolean  // Whether another page exists
+  total: number // Total matching records (not just this page)
+  page: number // 1-indexed current page
+  pageSize: number // Items per page
+  hasMore: boolean // Whether another page exists
 }
 ```
 
@@ -92,8 +92,8 @@ Returned by [`getProjectsPaginated`](#getprojectspaginated).
 
 ```ts
 interface PricePoint {
-  date: string   // ISO 8601 date, e.g. "2025-03-14"
-  price: number  // Bond price in USDC
+  date: string // ISO 8601 date, e.g. "2025-03-14"
+  price: number // Bond price in USDC
   yield?: number // Yield at that date (percentage)
 }
 ```
@@ -135,7 +135,7 @@ const projects = await getProjects()
 
 ```ts
 async function getProjectsPaginated(
-  page?: number,     // default: 1
+  page?: number, // default: 1
   pageSize?: number, // default: 12
 ): Promise<PaginatedProjectsResponse>
 ```
@@ -148,10 +148,10 @@ by deferring off-screen projects.
 
 **Parameters:**
 
-| Param | Type | Default | Description |
-|---|---|---|---|
-| `page` | `number` | `1` | 1-indexed page number |
-| `pageSize` | `number` | `12` | Items per page |
+| Param      | Type     | Default | Description           |
+| ---------- | -------- | ------- | --------------------- |
+| `page`     | `number` | `1`     | 1-indexed page number |
+| `pageSize` | `number` | `12`    | Items per page        |
 
 **Returns:** `PaginatedProjectsResponse`
 
@@ -187,9 +187,9 @@ Fetches a single project with its full detail record.
 
 **Parameters:**
 
-| Param | Type | Description |
-|---|---|---|
-| `id` | `number` | Must be a positive integer (`id >= 1`). Non-integer, negative, zero, or `NaN` ids return `null` immediately without a network call. |
+| Param | Type     | Description                                                                                                                         |
+| ----- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `id`  | `number` | Must be a positive integer (`id >= 1`). Non-integer, negative, zero, or `NaN` ids return `null` immediately without a network call. |
 
 **Returns:** `ProjectWithDetail` or `null` when the project is not found.
 
@@ -208,7 +208,7 @@ if (result) {
 }
 
 // Invalid ids return null immediately — no request fired:
-await getProject(-1)  // null
+await getProject(-1) // null
 await getProject(NaN) // null
 await getProject(1.5) // null
 ```
@@ -218,10 +218,7 @@ await getProject(1.5) // null
 ### `createInvestment`
 
 ```ts
-async function createInvestment(input: {
-  projectId: number
-  amount: number
-}): Promise<Investment>
+async function createInvestment(input: { projectId: number; amount: number }): Promise<Investment>
 ```
 
 Creates a new investment record on the backend.
@@ -239,14 +236,15 @@ Creates a new investment record on the backend.
 
 **Parameters:**
 
-| Field | Type | Constraints |
-|---|---|---|
-| `projectId` | `number` | Must be a positive integer (`>= 1`). Throws on invalid input. |
-| `amount` | `number` | Must be a positive finite number (`> 0`). Throws on invalid input. |
+| Field       | Type     | Constraints                                                        |
+| ----------- | -------- | ------------------------------------------------------------------ |
+| `projectId` | `number` | Must be a positive integer (`>= 1`). Throws on invalid input.      |
+| `amount`    | `number` | Must be a positive finite number (`> 0`). Throws on invalid input. |
 
 **Returns:** `Investment`
 
 **Throws:** `Error('Invalid investment input')` for any of:
+
 - Non-integer `projectId`
 - `projectId < 1`
 - Non-finite `amount`
@@ -268,8 +266,8 @@ const investment = await createInvestment({ projectId: 3, amount: 250 })
 // { id: 84712, projectId: 3, amount: 250, projectUrl: '/projects/3' }
 
 // Invalid — throws before any HTTP call
-await createInvestment({ projectId: 0, amount: 100 })  // throws
-await createInvestment({ projectId: 1, amount: -50 })  // throws
+await createInvestment({ projectId: 0, amount: 100 }) // throws
+await createInvestment({ projectId: 1, amount: -50 }) // throws
 await createInvestment({ projectId: 1.5, amount: 100 }) // throws
 ```
 
@@ -287,9 +285,9 @@ Fetches 30-day bond price and yield history for a project.
 
 **Parameters:**
 
-| Param | Type | Description |
-|---|---|---|
-| `projectId` | `number` | Project ID |
+| Param       | Type     | Description |
+| ----------- | -------- | ----------- |
+| `projectId` | `number` | Project ID  |
 
 **Returns:** Array of `PricePoint` objects sorted in ascending chronological
 order (oldest first). The backend response is re-sorted if necessary.
@@ -331,6 +329,7 @@ the local challenge with a server-issued one before verifying the assertion.
 
 **Returns:** `true` if the biometric credential was successfully retrieved,
 `false` if:
+
 - WebAuthn is not supported (`window.PublicKeyCredential` is absent)
 - The user cancelled
 - An error occurred (logged as a warning)

@@ -14,13 +14,19 @@ describe('api', () => {
   })
 
   it('rejects invalid investment input', async () => {
-    await expect(createInvestment({ projectId: -1, amount: 100 })).rejects.toThrow('Invalid investment input')
-    await expect(createInvestment({ projectId: 1, amount: -100 })).rejects.toThrow('Invalid investment input')
-    await expect(createInvestment({ projectId: NaN, amount: 100 })).rejects.toThrow('Invalid investment input')
+    await expect(createInvestment({ projectId: -1, amount: 100 })).rejects.toThrow(
+      'Invalid investment input',
+    )
+    await expect(createInvestment({ projectId: 1, amount: -100 })).rejects.toThrow(
+      'Invalid investment input',
+    )
+    await expect(createInvestment({ projectId: NaN, amount: 100 })).rejects.toThrow(
+      'Invalid investment input',
+    )
   })
 
   it('creates investment with valid input', async () => {
-    const investment = await createInvestment({ projectId: 1, amount: 100})
+    const investment = await createInvestment({ projectId: 1, amount: 100 })
     expect(investment.projectId).toBe(1)
     expect(investment.amount).toBe(100)
     expect(investment.projectUrl).toBe('/projects/1')

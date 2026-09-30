@@ -1,5 +1,5 @@
-import { TaxReports } from "@/screens/TaxReports";
+import { TaxReports } from '@/screens/TaxReports'
 
 export default function TaxReportsPage() {
-  return <TaxReports />;
+  return <TaxReports />
 }

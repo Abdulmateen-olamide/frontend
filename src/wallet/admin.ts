@@ -77,8 +77,7 @@ export async function checkIsAdmin(address: string | null): Promise<boolean> {
     const server = new rpc.Server(RPC_URL, { allowHttp: false })
     const contract = new Contract(contractId)
     const source = new Account(address, '0')
-    const networkPassphrase =
-      STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
+    const networkPassphrase = STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
 
     for (const method of ['admin', 'owner', 'get_admin']) {
       try {
@@ -142,8 +141,7 @@ export async function isMultisigDeployment(address?: string): Promise<boolean> {
     const server = new rpc.Server(RPC_URL, { allowHttp: false })
     const contract = new Contract(contractId)
     const source = new Account(address, '0')
-    const networkPassphrase =
-      STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
+    const networkPassphrase = STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
 
     const tx = new TransactionBuilder(source, { fee: '100', networkPassphrase })
       .addOperation(contract.call('is_multisig'))
@@ -167,8 +165,16 @@ async function sendContractTx(
   address: string,
   sign: (xdr: string) => Promise<string>,
 ): Promise<string> {
-  const { rpc, Contract, TransactionBuilder, Networks, Horizon, Transaction, nativeToScVal, Address } =
-    await import('@stellar/stellar-sdk')
+  const {
+    rpc,
+    Contract,
+    TransactionBuilder,
+    Networks,
+    Horizon,
+    Transaction,
+    nativeToScVal,
+    Address,
+  } = await import('@stellar/stellar-sdk')
 
   const server = new rpc.Server(RPC_URL, { allowHttp: false })
   const horizon = new Horizon.Server(HORIZON_URL)
@@ -178,8 +184,7 @@ async function sendContractTx(
     horizon.loadAccount(address),
     'Stellar Horizon timed out loading account',
   )
-  const networkPassphrase =
-    STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
+  const networkPassphrase = STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
 
   const scArgs = args.map((a) => {
     if (a && typeof a === 'object' && typeof (a as { switch?: unknown }).switch === 'function') {
@@ -200,10 +205,7 @@ async function sendContractTx(
     .setTimeout(180)
     .build()
 
-  const simResult = await withTimeout(
-    server.simulateTransaction(tx),
-    'Simulation timed out',
-  )
+  const simResult = await withTimeout(server.simulateTransaction(tx), 'Simulation timed out')
   if ('error' in simResult) throw new Error(`Simulation failed: ${simResult.error}`)
 
   const assembled = rpc.assembleTransaction(tx, simResult).build()

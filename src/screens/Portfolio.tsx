@@ -206,12 +206,7 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
             </p>
           </div>
           {pendingClaims.length > 0 && (
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={claiming}
-              onClick={handleClaim}
-            >
+            <Button variant="primary" size="sm" disabled={claiming} onClick={handleClaim}>
               {claiming ? 'Claiming...' : 'Claim available liquidity'}
             </Button>
           )}

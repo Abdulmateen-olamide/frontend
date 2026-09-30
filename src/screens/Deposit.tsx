@@ -235,7 +235,11 @@ export function Deposit({ onDone }: DepositProps) {
                         Using estimated rate
                       </span>
                     )}
-                    {t.rich('preview', { shares: formatDecimal(n / price, 4), price: formatSharePrice(price), num })}
+                    {t.rich('preview', {
+                      shares: formatDecimal(n / price, 4),
+                      price: formatSharePrice(price),
+                      num,
+                    })}
                     <span
                       style={{
                         display: 'block',
@@ -499,12 +503,7 @@ export function Deposit({ onDone }: DepositProps) {
               <Button variant="ghost" onClick={() => changeStep('amount')}>
                 {t('back')}
               </Button>
-              <Button
-                variant="primary"
-                size="lg"
-                style={{ flex: 1 }}
-                onClick={handleSubmitDeposit}
-              >
+              <Button variant="primary" size="lg" style={{ flex: 1 }} onClick={handleSubmitDeposit}>
                 {t('confirm')}
               </Button>
             </div>

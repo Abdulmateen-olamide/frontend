@@ -193,10 +193,10 @@ async function sorobanSimulate(
     .setTimeout(0)
     .build()
 
-  const result = await withTimeout(
+  const result = (await withTimeout(
     server.simulateTransaction(tx),
     'Stellar RPC timed out during simulation',
-  ) as { error?: string; result?: { retval: unknown } }
+  )) as { error?: string; result?: { retval: unknown } }
   if ('error' in result) {
     const error = result.error
     // Distinguish programming errors (bad address, bad args) from network errors
@@ -569,7 +569,7 @@ export async function submitWithdraw(
       const v0 = typeof body?.v0 === 'function' ? body.v0() : undefined
       if (!v0) return
 
-      const topics = typeof v0.topics === 'function' ? v0.topics() ?? [] : []
+      const topics = typeof v0.topics === 'function' ? (v0.topics() ?? []) : []
       const topicStrs = topics.map((t) => {
         try {
           return String(scValToNative(t as Parameters<typeof scValToNative>[0]))
@@ -638,7 +638,9 @@ export async function submitWithdraw(
         switch?: () => number
         value?: () => { sorobanMeta?: () => { events?: () => unknown[] } }
       }
-      const v3 = typedMeta.v3?.() || (typedMeta.switch?.() === 3 || typedMeta.switch?.() === 4 ? typedMeta.value?.() : null)
+      const v3 =
+        typedMeta.v3?.() ||
+        (typedMeta.switch?.() === 3 || typedMeta.switch?.() === 4 ? typedMeta.value?.() : null)
       const events = v3?.sorobanMeta?.()?.events?.() ?? []
       for (const evt of events) inspectEvent(evt)
     } catch {
@@ -661,7 +663,12 @@ export async function submitWithdraw(
     }
   }
 
-  const result = createWithdrawResult(hash, queued, position ?? (queued ? 1 : undefined), estimatedAmount)
+  const result = createWithdrawResult(
+    hash,
+    queued,
+    position ?? (queued ? 1 : undefined),
+    estimatedAmount,
+  )
   notifyTransactionConfirmed(hash, 'withdraw')
   return result
 }
@@ -716,7 +723,12 @@ export async function submitClaimYield(
     return demoHash
   }
   const { Address } = await import('@stellar/stellar-sdk')
-  const { hash } = await invokeSigned(address, 'claim_yield', [new Address(address).toScVal()], sign)
+  const { hash } = await invokeSigned(
+    address,
+    'claim_yield',
+    [new Address(address).toScVal()],
+    sign,
+  )
   notifyTransactionConfirmed(hash, 'claim_yield')
   return hash
 }

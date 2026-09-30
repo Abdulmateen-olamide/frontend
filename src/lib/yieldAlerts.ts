@@ -77,10 +77,7 @@ export function getEffectiveYield(project: Pick<Project, 'credit' | 'green'>): n
  * that have crossed their threshold. Applies a 60-second cooldown to
  * avoid spamming the same alert repeatedly.
  */
-export function evaluateAlerts(
-  alerts: YieldAlert[],
-  projects: Project[],
-): TriggeredAlert[] {
+export function evaluateAlerts(alerts: YieldAlert[], projects: Project[]): TriggeredAlert[] {
   const now = Date.now()
   const COOLDOWN_MS = 60_000
 
@@ -93,9 +90,7 @@ export function evaluateAlerts(
     const currentYield = getEffectiveYield(project)
 
     const crossed =
-      alert.operator === 'above'
-        ? currentYield > alert.threshold
-        : currentYield < alert.threshold
+      alert.operator === 'above' ? currentYield > alert.threshold : currentYield < alert.threshold
 
     if (!crossed) continue
 

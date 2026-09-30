@@ -16,7 +16,11 @@ const TOTAL_LIQUID_BALANCE = '482.00'
 const QUICK_WITHDRAW_AMOUNT_SMALL = 2000
 const QUICK_WITHDRAW_AMOUNT_MEDIUM = 5000
 const QUICK_WITHDRAW_AMOUNT_LARGE = 10000
-const QUICK_WITHDRAW_AMOUNTS = [QUICK_WITHDRAW_AMOUNT_SMALL, QUICK_WITHDRAW_AMOUNT_MEDIUM, QUICK_WITHDRAW_AMOUNT_LARGE]
+const QUICK_WITHDRAW_AMOUNTS = [
+  QUICK_WITHDRAW_AMOUNT_SMALL,
+  QUICK_WITHDRAW_AMOUNT_MEDIUM,
+  QUICK_WITHDRAW_AMOUNT_LARGE,
+]
 const MIN_WITHDRAWAL_AMOUNT = 1
 const DISPLAY_DECIMALS = 2
 const DEFAULT_SLIPPAGE_TOLERANCE = 0.005 // 0.5%
@@ -130,7 +134,9 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                   color: 'var(--ink)',
                 }}
               >
-                <strong>Warning:</strong> Requested amount exceeds immediately available liquid balance (${liquid}.00). Your withdrawal will be placed in the FIFO queue (WithdrawQueued) and will be claimable once vault liquidity is replenished.
+                <strong>Warning:</strong> Requested amount exceeds immediately available liquid
+                balance (${liquid}.00). Your withdrawal will be placed in the FIFO queue
+                (WithdrawQueued) and will be claimable once vault liquidity is replenished.
               </div>
             )}
             {n > TOTAL_LIQUID && (
@@ -194,19 +200,35 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
               size="lg"
               style={{ width: '100%', marginTop: 20, background: 'var(--primary)' }}
               disabled={n < MIN_WITHDRAWAL_AMOUNT || n > TOTAL_LIQUID}
-              reason={n > TOTAL_LIQUID ? 'Amount exceeds pool limit' : n < MIN_WITHDRAWAL_AMOUNT ? t('reasonMin') : undefined}
+              reason={
+                n > TOTAL_LIQUID
+                  ? 'Amount exceeds pool limit'
+                  : n < MIN_WITHDRAWAL_AMOUNT
+                    ? t('reasonMin')
+                    : undefined
+              }
               onClick={async () => {
                 changeStep('pending')
                 setTxError(null)
                 const controller = new AbortController()
                 abortControllerRef.current = controller
                 try {
-                  const result = await submitWithdraw(n, address ?? '', sign, controller.signal, slippageTolerance)
+                  const result = await submitWithdraw(
+                    n,
+                    address ?? '',
+                    sign,
+                    controller.signal,
+                    slippageTolerance,
+                  )
                   if (mountedRef.current) {
                     const hash = typeof result === 'string' ? result : result.hash
                     const queued = typeof result === 'object' ? Boolean(result.queued) : false
-                    const position = typeof result === 'object' && result.position ? result.position : 1
-                    const est = typeof result === 'object' && result.estimatedAmount ? result.estimatedAmount : n
+                    const position =
+                      typeof result === 'object' && result.position ? result.position : 1
+                    const est =
+                      typeof result === 'object' && result.estimatedAmount
+                        ? result.estimatedAmount
+                        : n
                     setTxHash(hash)
                     setIsQueued(queued)
                     setQueuePosition(position)
@@ -366,7 +388,8 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                     marginBottom: 14,
                   }}
                 >
-                  Queued — position #{queuePosition ?? 1}, est. amount ${formatDecimal(estimatedAmount ?? n, DISPLAY_DECIMALS)} USDC
+                  Queued — position #{queuePosition ?? 1}, est. amount $
+                  {formatDecimal(estimatedAmount ?? n, DISPLAY_DECIMALS)} USDC
                 </div>
                 <p
                   style={{
@@ -377,7 +400,9 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                     margin: 0,
                   }}
                 >
-                  Your withdrawal has been queued in the FIFO queue because immediate vault liquidity is limited. You can track and claim this withdrawal from your Portfolio once liquidity becomes available.
+                  Your withdrawal has been queued in the FIFO queue because immediate vault
+                  liquidity is limited. You can track and claim this withdrawal from your Portfolio
+                  once liquidity becomes available.
                 </p>
               </div>
             ) : (
@@ -410,7 +435,12 @@ export function Withdraw({ onDone, onBack }: WithdrawProps) {
                 />
               </div>
             )}
-            <Button variant="primary" size="lg" style={{ width: '100%', background: 'var(--primary)' }} onClick={onDone}>
+            <Button
+              variant="primary"
+              size="lg"
+              style={{ width: '100%', background: 'var(--primary)' }}
+              onClick={onDone}
+            >
               {t('backToPortfolio')}
             </Button>
           </div>

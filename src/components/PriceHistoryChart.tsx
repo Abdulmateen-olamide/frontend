@@ -84,7 +84,8 @@ export function PriceHistoryChart({ projectId }: PriceHistoryChartProps) {
         Bond pricing
       </h2>
       <p style={captionStyle}>
-        Oracle-verified observations, {history.length > 1 ? `${first.date} – ${last.date}` : last.date}.
+        Oracle-verified observations,{' '}
+        {history.length > 1 ? `${first.date} – ${last.date}` : last.date}.
       </p>
 
       <div style={seriesRowStyle}>
