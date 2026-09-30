@@ -302,11 +302,42 @@ describe('signed transactions', () => {
     )
   })
 
+  it('retries TRY_AGAIN_LATER with backoff', async () => {
+    const vault = await loadVault()
+    rpcMock.sendTransaction
+      .mockResolvedValueOnce({ status: 'TRY_AGAIN_LATER' })
+      .mockResolvedValueOnce({ status: 'TRY_AGAIN_LATER' })
+      .mockImplementation(async (tx: any) => ({ status: 'PENDING', hash: tx.hash().toString('hex') }))
+    
+    await settle(vault.submitWithdraw(100, USER, sign))
+    expect(rpcMock.sendTransaction).toHaveBeenCalledTimes(3)
+  })
+
+  it('fails after max TRY_AGAIN_LATER retries', async () => {
+    const vault = await loadVault()
+    rpcMock.sendTransaction.mockResolvedValue({ status: 'TRY_AGAIN_LATER' })
+    await expect(settle(vault.submitWithdraw(100, USER, sign))).rejects.toThrow(
+      'Send failed: TRY_AGAIN_LATER',
+    )
+  })
+
   it('surfaces an on-chain failure', async () => {
     const vault = await loadVault()
     rpcMock.getTransaction.mockResolvedValue({ status: 'FAILED' })
     await expect(settle(vault.submitClaim(USER, sign))).rejects.toThrow(
       'Transaction failed on-chain',
+    )
+  })
+
+  it('surfaces an on-chain contract failure with error code', async () => {
+    const vault = await loadVault()
+    const errorVal = xdr.ScVal.scvError(new xdr.ScError.sceContract(33))
+    rpcMock.getTransaction.mockResolvedValue({
+      status: 'FAILED',
+      resultXdr: errorVal,
+    })
+    await expect(settle(vault.submitClaim(USER, sign))).rejects.toThrow(
+      'Transaction failed on-chain: Error(Contract, #33)',
     )
   })
 

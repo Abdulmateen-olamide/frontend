@@ -456,6 +456,15 @@ export interface TransactionConfirmation {
 
 class TransactionFailedError extends Error {}
 
+function extractContractError(result: unknown): string {
+  try {
+    const str = JSON.stringify(result, (k, v) => (typeof v === 'bigint' ? v.toString() : v))
+    const match = str.match(/"name":\s*"sceContract".*?"_value":\s*(\d+)/)
+    if (match) return `Error(Contract, #${match[1]})`
+  } catch {}
+  return ''
+}
+
 /** Poll until a submitted transaction reaches a terminal status. */
 async function waitForTransaction(hash: string): Promise<TransactionConfirmation> {
   const { rpc } = await import('@stellar/stellar-sdk')
@@ -472,11 +481,14 @@ async function waitForTransaction(hash: string): Promise<TransactionConfirmation
       return result as unknown as TransactionConfirmation
     }
     if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
-      throw new TransactionFailedError('Transaction failed on-chain')
+      const contractErr = extractContractError(result)
+      throw new TransactionFailedError(
+        `Transaction failed on-chain${contractErr ? `: ${contractErr}` : ''}`
+      )
     }
     // NOT_FOUND means still pending, keep polling
   }
-  throw new Error('Transaction confirmation timed out')
+  throw new TransactionPendingError(hash)
 }
 
 /**
@@ -536,15 +548,34 @@ async function invokeSigned(
   })
   let hash = localHash
   try {
-    const sendResult = await withTimeout(
-      server.sendTransaction(signedTx),
-      'Stellar RPC timed out submitting transaction',
-    )
-    if (sendResult.status === 'ERROR' || sendResult.status === 'TRY_AGAIN_LATER') {
-      throw new TransactionFailedError(
-        `Send failed: ${JSON.stringify(sendResult.errorResult ?? sendResult.status)}`,
+    let sendResult
+    let retries = 0
+    const MAX_RETRIES = 5
+    while (true) {
+      sendResult = await withTimeout(
+        server.sendTransaction(signedTx),
+        'Stellar RPC timed out submitting transaction',
       )
+      if (sendResult.status === 'TRY_AGAIN_LATER') {
+        if (retries < MAX_RETRIES) {
+          retries++
+          await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, retries - 1)))
+          continue
+        }
+        throw new TransactionFailedError('Send failed: TRY_AGAIN_LATER')
+      }
+      break
     }
+
+    if (sendResult.status === 'ERROR') {
+      const contractErr = extractContractError(sendResult)
+      const msg = contractErr 
+        ? contractErr 
+        : JSON.stringify(sendResult.errorResult ?? 'unknown', (k, v) => (typeof v === 'bigint' ? v.toString() : v))
+      throw new TransactionFailedError(`Send failed: ${msg}`)
+    }
+
+    // DUPLICATE and PENDING fall through to polling.
     // The RPC hash should equal the hash computed from the signed envelope.
     if (sendResult.hash && sendResult.hash !== localHash) {
       throw new TransactionPendingError(localHash)
