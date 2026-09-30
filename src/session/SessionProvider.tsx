@@ -70,14 +70,75 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [signingIn, setSigningIn] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const sessionRef = useRef(session)
-  sessionRef.current = session
+  const addressRef = useRef(address)
+  const isMountedRef = useRef(true)
+
+  useEffect(() => {
+    sessionRef.current = session
+  }, [session])
+
+  useEffect(() => {
+    addressRef.current = address
+  }, [address])
+
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
+
+  // Epoch counter to detect if the session was cleared or signed out while a refresh was in flight.
+  const sessionEpochRef = useRef(0)
+  // Single in-flight refresh promise shared by timer, authedFetch, and connect-time restore.
+  const refreshPromiseRef = useRef<Promise<SessionToken> | null>(null)
   // Addresses the user already declined/failed to sign for, so we don't nag.
   const attempted = useRef<Set<string>>(new Set())
 
   const clear = useCallback(() => {
+    sessionEpochRef.current += 1
     sessionRef.current = null
     setSession(null)
   }, [])
+
+  const refreshCurrentSession = useCallback(async (): Promise<SessionToken> => {
+    if (refreshPromiseRef.current) {
+      return refreshPromiseRef.current
+    }
+
+    const epoch = sessionEpochRef.current
+    const targetAddress = addressRef.current ?? sessionRef.current?.address ?? null
+
+    const promise = (async () => {
+      try {
+        const token = await refreshSession()
+        // If the session was cleared or the address changed while in flight,
+        // do not resurrect the cleared session.
+        if (
+          sessionEpochRef.current !== epoch ||
+          !isMountedRef.current ||
+          !targetAddress ||
+          addressRef.current !== targetAddress
+        ) {
+          return token
+        }
+        const next = { ...token, address: targetAddress }
+        sessionRef.current = next
+        setSession(next)
+        return token
+      } catch (err) {
+        if (sessionEpochRef.current === epoch && isMountedRef.current) {
+          clear()
+        }
+        throw err
+      } finally {
+        refreshPromiseRef.current = null
+      }
+    })()
+
+    refreshPromiseRef.current = promise
+    return promise
+  }, [clear])
 
   const signIn = useCallback(async (): Promise<boolean> => {
     if (!eligible || !address) return false
@@ -92,6 +153,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         signature = await signMessage(challenge.challenge)
       }
       const token = await verifyChallenge(address, challenge, signature)
+      sessionEpochRef.current += 1
       const next = { ...token, address }
       sessionRef.current = next
       setSession(next)
@@ -112,6 +174,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   // Address changed or wallet disconnected: the old token no longer matches.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (session && (!eligible || session.address !== address)) clear()
   }, [session, eligible, address, clear])
 
@@ -120,58 +183,103 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!eligible || !address || sessionRef.current) return
     if (attempted.current.has(address)) return
     attempted.current.add(address)
-    const controller = new AbortController()
+    let cancelled = false
     void (async () => {
       try {
-        const token = await refreshSession(controller.signal)
-        const next = { ...token, address }
-        sessionRef.current = next
-        setSession(next)
+        await refreshCurrentSession()
       } catch {
-        if (!controller.signal.aborted) await signIn()
+        if (!cancelled && isMountedRef.current && !sessionRef.current) {
+          await signIn()
+        }
       }
     })()
-    return () => controller.abort()
-  }, [eligible, address, signIn])
+    return () => {
+      cancelled = true
+    }
+  }, [eligible, address, signIn, refreshCurrentSession])
 
-  // Silent refresh shortly before expiry.
+  // Silent refresh shortly before expiry, with jitter and pause-while-hidden.
   useEffect(() => {
     if (!session) return
-    const delay = Math.max(session.expiresAt - Date.now() - REFRESH_LEAD_MS, 5_000)
-    const timer = setTimeout(async () => {
-      try {
-        const token = await refreshSession()
-        const next = { ...token, address: session.address }
-        sessionRef.current = next
-        setSession(next)
-      } catch {
-        clear()
+
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const scheduleTimer = () => {
+      // Small jitter (0-5s) to avoid synchronised refreshes across tabs.
+      const jitter = Math.floor(Math.random() * 5_000)
+      const delay = Math.max(session.expiresAt - Date.now() - REFRESH_LEAD_MS - jitter, 5_000)
+
+      timer = setTimeout(async () => {
+        if (typeof document !== 'undefined' && document.hidden) {
+          // Tab is hidden; pause timer refresh. It will refresh when the tab becomes visible.
+          return
+        }
+        try {
+          await refreshCurrentSession()
+        } catch {
+          // Failure handled inside refreshCurrentSession (clear called)
+        }
+      }, delay)
+    }
+
+    const onVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        const timeUntilExpiry = session.expiresAt - Date.now()
+        if (timeUntilExpiry <= REFRESH_LEAD_MS) {
+          void refreshCurrentSession().catch(() => {})
+        }
       }
-    }, delay)
-    return () => clearTimeout(timer)
-  }, [session, clear])
+    }
+
+    scheduleTimer()
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange)
+    }
+
+    return () => {
+      if (timer) clearTimeout(timer)
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange)
+      }
+    }
+  }, [session, refreshCurrentSession])
 
   const authedFetch = useCallback<SessionContextValue['authedFetch']>(
     async (path, init) => {
-      const current = sessionRef.current
-      if (!current) throw new AuthError('Not signed in', 401)
+      const initial = sessionRef.current
+      if (!initial) throw new AuthError('Not signed in', 401)
       try {
-        return await authedRequest(path, current.token, init)
+        return await authedRequest(path, initial.token, init)
       } catch (e) {
         if (!(e instanceof AuthError) || e.status !== 401) throw e
-        try {
-          const token = await refreshSession()
-          const next = { ...token, address: current.address }
-          sessionRef.current = next
-          setSession(next)
-          return await authedRequest(path, token.token, init)
-        } catch (retryError) {
-          clear()
-          throw retryError
+
+        // If the session was cleared while the request was in flight (e.g. user signed out or wallet disconnected),
+        // do not refresh or retry; throw 401 immediately.
+        if (!sessionRef.current) {
+          throw new AuthError('Not signed in', 401)
         }
+
+        let tokenToUse: string
+        const current = sessionRef.current
+        // If the token changed while the request was in flight (i.e. another caller already refreshed),
+        // retry once with the new token instead of triggering another refresh.
+        if (current && current.token !== initial.token) {
+          tokenToUse = current.token
+        } else {
+          const refreshed = await refreshCurrentSession()
+          tokenToUse = refreshed.token
+        }
+
+        if (!sessionRef.current) {
+          throw new AuthError('Not signed in', 401)
+        }
+
+        // Retry once with the refreshed/new token.
+        // A failed retry after a successful refresh must NOT sign the user out.
+        return await authedRequest(path, tokenToUse, init)
       }
     },
-    [clear],
+    [refreshCurrentSession],
   )
 
   const status: SessionStatus = !configured

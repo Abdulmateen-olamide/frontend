@@ -327,18 +327,20 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
                       borderRadius: 'var(--radius-pill)',
                     }}
                   >
-                    Queue #{claim.position}
+                    Queued
                   </span>
-                  <span
-                    style={{
-                      fontFamily: 'var(--font-data)',
-                      fontSize: 'var(--type-body)',
-                      fontWeight: 600,
-                      color: 'var(--ink)',
-                    }}
-                  >
-                    ${formatDecimal(claim.amount, 2)} USDC
-                  </span>
+                  {claim.amount !== undefined && (
+                    <span
+                      style={{
+                        fontFamily: 'var(--font-data)',
+                        fontSize: 'var(--type-body)',
+                        fontWeight: 600,
+                        color: 'var(--ink)',
+                      }}
+                    >
+                      ${formatDecimal(claim.amount, 2)} USDC
+                    </span>
+                  )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span
