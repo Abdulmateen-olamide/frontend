@@ -1,11 +1,11 @@
-'use client'
+import { HomeClient } from './HomeClient'
+import { routeMetadata } from '../lib/routeMetadata.server'
 
-import { useRouter } from 'next/navigation'
-import { Landing } from '../screens/Landing'
+/** The home page carries the site's own title, via the root layout's template (#657). */
+export async function generateMetadata() {
+  return routeMetadata('/')
+}
 
 export default function HomePage() {
-  const router = useRouter()
-  return (
-    <Landing onConnect={() => router.push('/connect')} onExplore={() => router.push('/explore')} />
-  )
+  return <HomeClient />
 }

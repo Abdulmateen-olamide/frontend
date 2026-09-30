@@ -108,6 +108,36 @@ describe('reporting', () => {
     expect(isTelemetryAllowed()).toBe(false)
   })
 
+  it('survives storage that throws — a private-mode browser, say', () => {
+    const boom = {
+      getItem: () => {
+        throw new Error('denied')
+      },
+      setItem: () => {
+        throw new Error('denied')
+      },
+      removeItem: () => {
+        throw new Error('denied')
+      },
+    }
+    const original = window.localStorage
+    Object.defineProperty(window, 'localStorage', {
+      value: boom,
+      writable: true,
+      configurable: true,
+    })
+
+    expect(readTelemetryConsent()).toBeNull()
+    expect(() => setTelemetryConsent('granted')).not.toThrow()
+    expect(isTelemetryAllowed()).toBe(false)
+
+    Object.defineProperty(window, 'localStorage', {
+      value: original,
+      writable: true,
+      configurable: true,
+    })
+  })
+
   it('notifies same-tab listeners when the choice changes', () => {
     const listener = vi.fn()
     window.addEventListener(TELEMETRY_CONSENT_EVENT, listener)
@@ -154,5 +184,78 @@ describe('reporting', () => {
     reportWebVitals({ id: '2', name: 'Next.js-hydration', value: 10 })
     expect(beacon).toHaveBeenCalledOnce()
     expect(await payload()).toMatchObject({ type: 'web-vital', name: 'LCP', value: 1234.568 })
+  })
+
+  it('falls back to fetch when sendBeacon is unavailable or declines the payload', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', fetchMock)
+    // No sendBeacon at all.
+    vi.stubGlobal('navigator', { doNotTrack: null })
+    reportError(new Error('no beacon'), { kind: 'render' })
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls[0][0]).toBe('https://telemetry.test/ingest')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'POST', keepalive: true })
+
+    // sendBeacon present but returns false (payload too large, quota…).
+    beacon.mockReturnValueOnce(false)
+    reportError(new Error('beacon declined'), { kind: 'render' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('never throws into the app when the transport itself fails', () => {
+    vi.stubGlobal('navigator', {
+      doNotTrack: null,
+      sendBeacon: () => {
+        throw new Error('beacon exploded')
+      },
+    })
+    expect(() => reportError(new Error('boom'), { kind: 'render' })).not.toThrow()
+  })
+
+  it('sends nothing when no sink URL is configured', () => {
+    vi.stubEnv('NEXT_PUBLIC_ERROR_REPORT_URL', '')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    reportError(new Error('boom'), { kind: 'render' })
+    expect(beacon).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('installGlobalErrorHandlers (#658)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setTelemetryConsent('granted')
+  })
+
+  it('reports uncaught errors and unhandled rejections, then detaches', async () => {
+    const { installGlobalErrorHandlers } = await import('./errorReporting')
+    vi.stubEnv('NEXT_PUBLIC_ERROR_REPORT_URL', 'https://telemetry.test/ingest')
+    const spy = vi.spyOn(window, 'dispatchEvent')
+
+    const detach = installGlobalErrorHandlers()
+    window.dispatchEvent(new ErrorEvent('error', { error: new Error('render blew up') }))
+    window.dispatchEvent(new Event('unhandledrejection'))
+    expect(spy).toHaveBeenCalled()
+    detach()
+
+    // After detaching, the handlers are gone and a later call installs again.
+    const second = installGlobalErrorHandlers()
+    expect(second).toBeTypeOf('function')
+    second()
+  })
+
+  it('installs only once, so a second call is a no-op', async () => {
+    const { installGlobalErrorHandlers } = await import('./errorReporting')
+    const detach = installGlobalErrorHandlers()
+    const second = installGlobalErrorHandlers()
+    expect(second).toBeTypeOf('function')
+    // Detaching the no-op must not unhook the handlers the first call installed.
+    second()
+    const error = new Error('still wired')
+    const spy = vi.spyOn(window, 'dispatchEvent')
+    window.dispatchEvent(new ErrorEvent('error', { error }))
+    expect(spy).toHaveBeenCalled()
+    detach()
   })
 })

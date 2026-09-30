@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@/test/render'
-import ExplorePage, { metadata } from './page'
+import en from '../../../messages/en.json'
+import ExplorePage, { generateMetadata } from './page'
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
@@ -32,9 +33,12 @@ vi.mock('../../lib/api', () => ({
 }))
 
 describe('ExplorePage (Server Component)', () => {
-  it('exports valid metadata for SEO', () => {
-    expect(metadata.title).toBeDefined()
-    expect(metadata.description).toBeDefined()
+  it('generates a localized title and description for SEO', async () => {
+    const meta = await generateMetadata()
+    expect(meta.title).toBe(en.Metadata.explore.title)
+    expect(meta.description).toBe(en.Metadata.explore.description)
+    // Indexable public content — never noindex.
+    expect(meta.robots).toBeUndefined()
   })
 
   it('renders initial projects pre-fetched on the server without initial loading state', async () => {

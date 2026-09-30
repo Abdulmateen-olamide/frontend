@@ -501,5 +501,63 @@
     "statusOn": "Permitida",
     "statusOff": "Desativada",
     "statusUndecided": "Não definida"
+  },
+  "Metadata": {
+    "home": {
+      "title": "Energia solar transformada em finanças",
+      "description": "Invista a partir de um dólar na transição energética. Um fundo transparente que financia projetos verdes verificados na Stellar."
+    },
+    "connect": {
+      "title": "Conecte a sua carteira",
+      "description": "Conecte uma carteira Stellar à Heliobond, ou abra uma sessão de demonstração para experimentar o fluxo do investidor sem extensão."
+    },
+    "explore": {
+      "title": "Explorar títulos verdes",
+      "description": "Navegue por projetos verificados de energia solar, eólica e hidrelétrica. Filtre por tipo de ativo e consulte as pontuações de crédito e verde."
+    },
+    "creator": {
+      "title": "Espaço do criador",
+      "description": "Candidate-se ao registro de projetos da Heliobond, crie a ficha de um projeto verde e acompanhe a pontuação do oráculo."
+    },
+    "deposit": {
+      "title": "Depositar",
+      "description": "Invista USDC em um título verde verificado e receba suas cotas do fundo."
+    },
+    "learn": {
+      "title": "Como a Heliobond funciona",
+      "description": "Explicação simples do fundo de títulos verdes: para onde vai o dinheiro, como o retorno é calculado e quem confere os números."
+    },
+    "portfolio": {
+      "title": "A sua carteira",
+      "description": "A sua posição na Heliobond, o retorno projetado e o histórico de depósitos."
+    },
+    "taxReports": {
+      "title": "Relatórios fiscais",
+      "description": "Baixe os relatórios fiscais consolidados dos seus investimentos na Heliobond."
+    },
+    "risk": {
+      "title": "Aviso de risco",
+      "description": "O que pode correr mal ao investir em títulos verdes da Heliobond: liquidez, pontuação do oráculo e cenários de perda."
+    },
+    "verify": {
+      "title": "Verifique tudo",
+      "description": "Os contratos da Heliobond são públicos, a cadência do oráculo está documentada e a fórmula de retorno está escrita à vista."
+    },
+    "watchlist": {
+      "title": "Lista de acompanhamento",
+      "description": "Os títulos que guardou e quais ainda aceitam financiamento."
+    },
+    "withdraw": {
+      "title": "Resgatar",
+      "description": "Resgate as suas cotas da Heliobond de volta para USDC."
+    },
+    "admin": {
+      "title": "Consola de administração",
+      "description": "Consola interna da Heliobond: estatísticas do cofre, registro de projetos, pontuação do oráculo e lista de criadores."
+    },
+    "projectNotFound": {
+      "title": "Projeto não encontrado",
+      "description": "Não foi possível encontrar o projeto de energia verde solicitado."
+    }
   }
 }

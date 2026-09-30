@@ -8,13 +8,19 @@ import { fontVariables } from '../theme/fonts'
 import { LocaleProvider, type Messages } from '../i18n/LocaleProvider'
 import { type Locale, RTL_LOCALES } from '../i18n/config'
 import { THEME_SCRIPT } from '../theme/themeScript'
+import { TITLE_TEMPLATE } from '../lib/routeMetadata'
 import '../styles/index.css'
 
 const TopBar = dynamic(() => import('../shell/TopBar').then((m) => m.TopBar))
 const Footer = dynamic(() => import('../shell/Footer').then((m) => m.Footer))
 
 export const metadata: Metadata = {
-  title: 'Heliobond — sunlight made financial',
+  // Child segments contribute only their page title; the template appends the
+  // brand, so no route has to repeat "| Heliobond" by hand (#657).
+  title: {
+    default: 'Heliobond — sunlight made financial',
+    template: TITLE_TEMPLATE,
+  },
   description:
     'Own a piece of the energy transition. From one dollar. A transparent pool funding verified green projects on Stellar.',
   icons: {
