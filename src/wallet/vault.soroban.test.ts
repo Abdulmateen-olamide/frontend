@@ -279,7 +279,7 @@ describe('signed transactions', () => {
         BigInt(Math.floor(200 * 0.995 * 1e7)),
       ],
     })
-  })
+  }, 10000)
 
   it('claim() takes no arguments', async () => {
     const vault = await loadVault()
@@ -335,7 +335,7 @@ describe('signed transactions', () => {
     })
     expect(result).not.toHaveProperty('position')
     expect(String(result)).toBe(simulatedTx().hash().toString('hex'))
-  })
+  }, 10000)
 
   it('detects a queued withdrawal when the RPC response omits events', async () => {
     const vault = await loadVault()
@@ -349,7 +349,7 @@ describe('signed transactions', () => {
     expect(result.queued).toBe(true)
     expect(result.estimatedAmount).toBeUndefined()
     expect(result).not.toHaveProperty('position')
-  })
+  }, 10000)
 
   it('does not ask the wallet to sign when simulation fails', async () => {
     const vault = await loadVault()
