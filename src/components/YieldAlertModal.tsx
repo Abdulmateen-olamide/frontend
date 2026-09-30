@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Button } from './Button'
 import { CloseIcon } from './icons'
@@ -44,13 +44,25 @@ export function YieldAlertModal({
   const firstInputRef = useRef<HTMLInputElement>(null)
   useFocusTrap(open, dialogRef, firstInputRef, onClose)
 
-  // Initialize the editable form when a dialog is opened or its source alert changes.
-  useEffect(() => {
-    if (!open) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setThreshold(String(initialThreshold))
-    setOperator(initialOperator)
-  }, [open, initialThreshold, initialOperator])
+  // Reseed the form when the modal opens with new values. Adjusting during
+  // render is React's sanctioned way to reset state for a changed prop, and
+  // avoids a wasted render pass (#598).
+  const [seed, setSeed] = useState<{ open: boolean; threshold: number; operator: AlertOperator }>({
+    open,
+    threshold: initialThreshold,
+    operator: initialOperator,
+  })
+  if (
+    seed.open !== open ||
+    seed.threshold !== initialThreshold ||
+    seed.operator !== initialOperator
+  ) {
+    setSeed({ open, threshold: initialThreshold, operator: initialOperator })
+    if (open) {
+      setThreshold(String(initialThreshold))
+      setOperator(initialOperator)
+    }
+  }
 
   const handleSave = useCallback(() => {
     const parsed = parseFloat(threshold)
