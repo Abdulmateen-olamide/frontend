@@ -12,6 +12,7 @@ import {
   fetchProjectWithDetails,
 } from '../wallet/registry'
 import { ApiError } from './error'
+import { loginBiometric } from './webauthn'
 export { ApiError } from './error'
 import { reportError } from './errorReporting'
 
@@ -227,32 +228,18 @@ export async function createInvestment(input: {
 
 /**
  * Performs biometric login (Face ID / Touch ID) using the WebAuthn API.
- * Returns true if the user successfully authenticates, false otherwise.
- * This is a client-side implementation; the actual verification should happen
- * with a backend challenge, but for now we generate a random challenge locally.
+ * Delegates to the canonical WebAuthn challenge-response implementation in webauthn.ts.
+ * Returns true if the user successfully authenticates via server verification, false otherwise.
  */
-export async function biometricLogin(): Promise<boolean> {
+export async function biometricLogin(username: string = ''): Promise<boolean> {
   if (typeof window === 'undefined' || !window.PublicKeyCredential) {
     console.warn('[api] Biometric login not supported on this device/browser')
     return false
   }
 
   try {
-    // Generate a random challenge (in production, this would come from the server)
-    const challenge = new Uint8Array(32)
-    crypto.getRandomValues(challenge)
-
-    // Request a credential from the authenticator
-    const credential = await navigator.credentials.get({
-      publicKey: {
-        challenge,
-        rpId: window.location.hostname,
-        allowCredentials: [],
-        userVerification: 'required',
-      },
-    })
-
-    return Boolean(credential)
+    await loginBiometric(username)
+    return true
   } catch (error) {
     console.warn('[api] biometric login failed:', error)
     return false

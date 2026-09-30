@@ -6,48 +6,48 @@
 // allocated to that event. Deposits establish cost basis and are not
 // themselves taxable events.
 
-export type InvestmentEventType = "deposit" | "withdrawal" | "distribution";
+export type InvestmentEventType = 'deposit' | 'withdrawal' | 'distribution'
 
 export interface InvestmentEvent {
-  id: string;
-  projectName: string;
+  id: string
+  projectName: string
   /** ISO 8601 date string, e.g. "2025-03-14" */
-  date: string;
-  type: InvestmentEventType;
-  amountUSD: number;
+  date: string
+  type: InvestmentEventType
+  amountUSD: number
   /** Cost basis allocated to this event. 0/undefined for deposits. */
-  costBasisUSD?: number;
+  costBasisUSD?: number
 }
 
 export interface QuarterlyTaxLine {
-  quarter: string; // e.g. "2025-Q1"
-  year: number;
-  quarterNumber: 1 | 2 | 3 | 4;
-  totalDeposits: number;
-  totalWithdrawals: number;
-  totalDistributions: number;
-  realizedGainUSD: number;
-  events: InvestmentEvent[];
+  quarter: string // e.g. "2025-Q1"
+  year: number
+  quarterNumber: 1 | 2 | 3 | 4
+  totalDeposits: number
+  totalWithdrawals: number
+  totalDistributions: number
+  realizedGainUSD: number
+  events: InvestmentEvent[]
 }
 
 export function getQuarter(dateStr: string): { year: number; quarterNumber: 1 | 2 | 3 | 4 } {
-  const date = new Date(dateStr);
-  const month = date.getUTCMonth(); // 0-11
-  const quarterNumber = (Math.floor(month / 3) + 1) as 1 | 2 | 3 | 4;
-  return { year: date.getUTCFullYear(), quarterNumber };
+  const date = new Date(dateStr)
+  const month = date.getUTCMonth() // 0-11
+  const quarterNumber = (Math.floor(month / 3) + 1) as 1 | 2 | 3 | 4
+  return { year: date.getUTCFullYear(), quarterNumber }
 }
 
 function realizedGain(event: InvestmentEvent): number {
-  if (event.type === "deposit") return 0;
-  return event.amountUSD - (event.costBasisUSD ?? 0);
+  if (event.type === 'deposit') return 0
+  return event.amountUSD - (event.costBasisUSD ?? 0)
 }
 
 export function computeQuarterlyTaxReport(events: InvestmentEvent[]): QuarterlyTaxLine[] {
-  const byQuarter = new Map<string, QuarterlyTaxLine>();
+  const byQuarter = new Map<string, QuarterlyTaxLine>()
 
   for (const event of events) {
-    const { year, quarterNumber } = getQuarter(event.date);
-    const key = `${year}-Q${quarterNumber}`;
+    const { year, quarterNumber } = getQuarter(event.date)
+    const key = `${year}-Q${quarterNumber}`
 
     if (!byQuarter.has(key)) {
       byQuarter.set(key, {
@@ -59,32 +59,32 @@ export function computeQuarterlyTaxReport(events: InvestmentEvent[]): QuarterlyT
         totalDistributions: 0,
         realizedGainUSD: 0,
         events: [],
-      });
+      })
     }
 
-    const line = byQuarter.get(key)!;
-    line.events.push(event);
+    const line = byQuarter.get(key)!
+    line.events.push(event)
 
-    if (event.type === "deposit") line.totalDeposits += event.amountUSD;
-    if (event.type === "withdrawal") line.totalWithdrawals += event.amountUSD;
-    if (event.type === "distribution") line.totalDistributions += event.amountUSD;
+    if (event.type === 'deposit') line.totalDeposits += event.amountUSD
+    if (event.type === 'withdrawal') line.totalWithdrawals += event.amountUSD
+    if (event.type === 'distribution') line.totalDistributions += event.amountUSD
 
-    line.realizedGainUSD += realizedGain(event);
+    line.realizedGainUSD += realizedGain(event)
   }
 
   return Array.from(byQuarter.values()).sort((a, b) =>
-    a.year !== b.year ? a.year - b.year : a.quarterNumber - b.quarterNumber
-  );
+    a.year !== b.year ? a.year - b.year : a.quarterNumber - b.quarterNumber,
+  )
 }
 
 export function quarterlyReportToCsv(lines: QuarterlyTaxLine[]): string {
   const header = [
-    "Quarter",
-    "Total Deposits (USD)",
-    "Total Withdrawals (USD)",
-    "Total Distributions (USD)",
-    "Realized Gain (USD)",
-  ].join(",");
+    'Quarter',
+    'Total Deposits (USD)',
+    'Total Withdrawals (USD)',
+    'Total Distributions (USD)',
+    'Realized Gain (USD)',
+  ].join(',')
 
   const rows = lines.map((line) =>
     [
@@ -93,20 +93,20 @@ export function quarterlyReportToCsv(lines: QuarterlyTaxLine[]): string {
       line.totalWithdrawals.toFixed(2),
       line.totalDistributions.toFixed(2),
       line.realizedGainUSD.toFixed(2),
-    ].join(",")
-  );
+    ].join(','),
+  )
 
-  return [header, ...rows].join("\n");
+  return [header, ...rows].join('\n')
 }
 
 export function downloadCsv(filename: string, csvContent: string): void {
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
 }

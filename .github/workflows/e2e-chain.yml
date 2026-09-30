@@ -36,6 +36,10 @@ jobs:
           docker run -d --rm -p 8000:8000 --name stellar stellar/quickstart:latest \
             --local --enable core,rpc,horizon --limits unlimited
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies

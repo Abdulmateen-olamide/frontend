@@ -1,14 +1,11 @@
 import type { Metadata } from 'next'
-import type { ReactNode } from 'react'
+import { routeMetadata } from '../../lib/routeMetadata.server'
 
-export const metadata: Metadata = {
-  title: 'Admin Console - Heliobond',
-  robots: {
-    index: false,
-    follow: false,
-  },
+/** Admin is internal: noindex, and disallowed in robots.txt (#657). */
+export async function generateMetadata(): Promise<Metadata> {
+  return routeMetadata('/admin')
 }
 
-export default function AdminLayout({ children }: { children: ReactNode }) {
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }

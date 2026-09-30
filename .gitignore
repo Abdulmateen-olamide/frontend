@@ -50,6 +50,12 @@ dist/
 .vscode/
 .idea/
 
+# editor swap / backup files (Vim & friends) — local state, never reviewable
+*.swp
+*.swo
+*.swn
+*~
+
 # test output
 /coverage
 /test-results

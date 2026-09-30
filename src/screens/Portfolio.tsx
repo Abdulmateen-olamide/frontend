@@ -1,6 +1,9 @@
 'use client'
 
+import { TransactionPendingError } from '../wallet/transactions'
+
 import { memo, useState, useEffect, useCallback, type CSSProperties, type ReactNode } from 'react'
+import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { Button, StatBlock, LiquidityMeter, Card, AddressChip, useToast } from '../components'
 import { Helio } from '../brand/Helio'
@@ -63,8 +66,11 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
       })
     } catch (e) {
       toast({
-        tone: 'error',
-        title: 'Claim failed',
+        tone: e instanceof TransactionPendingError ? 'solar' : 'error',
+        title:
+          e instanceof TransactionPendingError
+            ? 'Still pending — we’ll keep checking'
+            : 'Claim failed',
         message: e instanceof Error ? e.message : 'Could not process claim at this time.',
       })
     } finally {
@@ -287,12 +293,7 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
             </p>
           </div>
           {pendingClaims.length > 0 && (
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={claiming}
-              onClick={handleClaim}
-            >
+            <Button variant="primary" size="sm" disabled={claiming} onClick={handleClaim}>
               {claiming ? 'Claiming...' : 'Claim available liquidity'}
             </Button>
           )}
@@ -479,9 +480,25 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
               justifyContent: 'space-between',
               alignItems: 'center',
               marginBottom: 8,
+              flexWrap: 'wrap',
+              gap: 12,
             }}
           >
-            <h3 style={cardTitle}>{t('activityTitle')}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <h3 style={cardTitle}>{t('activityTitle')}</h3>
+              <Link
+                href="/portfolio/tax-reports"
+                style={{
+                  fontFamily: 'var(--font-body)',
+                  fontSize: 'var(--type-small)',
+                  fontWeight: 600,
+                  color: 'var(--ink-60)',
+                  textDecoration: 'none',
+                }}
+              >
+                {t('taxReports')} →
+              </Link>
+            </div>
             <span
               style={{
                 fontFamily: 'var(--font-body)',
