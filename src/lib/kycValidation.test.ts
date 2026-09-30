@@ -5,6 +5,7 @@ import {
   formatDobForDisplay,
   validateAddress,
   hasMaliciousContent,
+  escapeHtml,
   type AddressValues,
 } from './kycValidation'
 
@@ -62,5 +63,22 @@ describe('security validation edge cases', () => {
     expect(validateAddress({ ...valid, apartment: '<script>x</script>' }).apartment).toBe(
       'Apartment contains invalid characters',
     )
+  })
+
+  it('accepts ordinary address words that resemble SQL keywords', () => {
+    const valid: AddressValues = {
+      street: '12 Union Street',
+      city: 'Union City',
+      state: 'NJ',
+      zip: '07001',
+      country: 'US',
+      apartment: 'Flat 2, Building 3 and 4',
+    }
+    expect(validateAddress(valid)).toEqual({})
+    expect(validateAddress({ ...valid, street: '1 Main St and 2nd Ave' })).toEqual({})
+  })
+
+  it("escapes apostrophes in display output", () => {
+    expect(escapeHtml("'")).toBe('&#39;')
   })
 })
