@@ -15,7 +15,7 @@ import { useReportWebVitals } from 'next/web-vitals'
 import { track } from '../lib/analytics'
 import { installGlobalErrorHandlers, reportWebVitals } from '../lib/errorReporting'
 import { TelemetryConsent } from '../components/TelemetryConsent'
-import { HORIZON_URL } from '../config/network'
+import { HorizonHealthProvider, useHorizonHealth } from '../hooks/useHorizonHealth'
 
 function Analytics() {
   const pathname = usePathname()
@@ -62,9 +62,7 @@ function SessionWatcher() {
 
 function OfflineBanner() {
   const { connected } = useWallet()
-  const [isOnline, setIsOnline] = useState(
-    typeof navigator !== 'undefined' ? navigator.onLine : true,
-  )
+  const { isOnline } = useHorizonHealth()
   const [wasConnected, setWasConnected] = useState(() => {
     try {
       return localStorage.getItem('stellar-wallet-connected') === 'true'
@@ -72,53 +70,6 @@ function OfflineBanner() {
       return false
     }
   })
-  const [stellarReachable, setStellarReachable] = useState(true)
-
-  useEffect(() => {
-    let active = true
-    let currentController: AbortController | null = null
-
-    const checkStellar = async () => {
-      // Abort any in-flight request to prevent stale responses/hangs.
-      if (currentController) {
-        currentController.abort()
-      }
-      const controller = new AbortController()
-      currentController = controller
-      const timeoutId = setTimeout(() => controller.abort(), 3000)
-
-      try {
-        const response = await fetch(`${HORIZON_URL}/`, { signal: controller.signal })
-        if (!response.ok) throw new Error('Stellar node unreachable')
-        if (active && currentController === controller) setStellarReachable(true)
-      } catch {
-        if (active && currentController === controller) setStellarReachable(false)
-      } finally {
-        clearTimeout(timeoutId)
-        if (currentController === controller) currentController = null
-      }
-    }
-
-    const handleOnline = () => {
-      setIsOnline(true)
-      checkStellar()
-    }
-    const handleOffline = () => setIsOnline(false)
-
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    checkStellar()
-    const interval = setInterval(checkStellar, 30000)
-
-    return () => {
-      active = false
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-      clearInterval(interval)
-      // Abort any outstanding request on unmount.
-      currentController?.abort()
-    }
-  }, [])
 
   useEffect(() => {
     if (connected) {
@@ -127,11 +78,12 @@ function OfflineBanner() {
       } catch {
         // ignore storage errors
       }
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setWasConnected(true)
     }
   }, [connected])
 
-  const showOffline = !isOnline || (wasConnected && !connected) || !stellarReachable
+  const showOffline = !isOnline || (wasConnected && !connected)
   if (!showOffline) return null
 
   return (
@@ -162,25 +114,27 @@ function OfflineBanner() {
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>
-      <WalletProvider>
-        <SessionProvider>
-          <TransactionsProvider>
-          <ToastProvider>
-            <WatchlistProvider>
-              <YieldAlertProvider>
-                <RecurringInvestmentSync />
-                <Analytics />
-                <Telemetry />
-                <TelemetryConsent />
-                <SessionWatcher />
-                <OfflineBanner />
-                {children}
-              </YieldAlertProvider>
-            </WatchlistProvider>
-          </ToastProvider>
-          </TransactionsProvider>
-        </SessionProvider>
-      </WalletProvider>
+      <HorizonHealthProvider>
+        <WalletProvider>
+          <SessionProvider>
+            <TransactionsProvider>
+              <ToastProvider>
+                <WatchlistProvider>
+                  <YieldAlertProvider>
+                    <RecurringInvestmentSync />
+                    <Analytics />
+                    <Telemetry />
+                    <TelemetryConsent />
+                    <SessionWatcher />
+                    <OfflineBanner />
+                    {children}
+                  </YieldAlertProvider>
+                </WatchlistProvider>
+              </ToastProvider>
+            </TransactionsProvider>
+          </SessionProvider>
+        </WalletProvider>
+      </HorizonHealthProvider>
     </ThemeProvider>
   )
 }
