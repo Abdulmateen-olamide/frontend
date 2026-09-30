@@ -88,7 +88,10 @@ async function settle<T>(run: Promise<T>): Promise<T> {
     (v) => ({ ok: true as const, v }),
     (e: unknown) => ({ ok: false as const, e }),
   )
-  for (let i = 0; i < 20; i++) await vi.advanceTimersByTimeAsync(2000)
+  // Drain the submission polling loop, including the timers it schedules while
+  // running. A fixed advance budget could run out on a loaded CI runner and
+  // leave the promise pending, hanging the test instead of failing it (#596).
+  await vi.runAllTimersAsync()
   const res = await guarded
   if (!res.ok) throw res.e
   return res.v
@@ -148,7 +151,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('signed transactions', { timeout: 30_000 }, () => {
+describe('signed transactions', () => {
   it.each(['deposit', 'withdraw', 'claim', 'claim_yield'] as const)(
     'persists %s before sending and tracks confirmation',
     async (kind) => {
@@ -487,7 +490,7 @@ describe('demo mode (no contract configured)', () => {
   })
 })
 
-describe('view calls', { timeout: 30_000 }, () => {
+describe('view calls', () => {
   it('share price reads convert_to_assets(1 share)', async () => {
     const vault = await loadVault()
     rpcMock.simulateTransaction.mockResolvedValue(
