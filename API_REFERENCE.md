@@ -332,31 +332,29 @@ const history = await getPriceHistory(2)
 ### `biometricLogin`
 
 ```ts
-async function biometricLogin(): Promise<boolean>
+async function biometricLogin(username?: string): Promise<boolean>
 ```
 
-Triggers a WebAuthn biometric prompt (Face ID / Touch ID) and returns whether
-the user authenticated successfully.
+Triggers a WebAuthn biometric prompt (Face ID / Touch ID) and delegates to the canonical challenge-response flow in `webauthn.ts`.
 
-**No backend endpoint** — this is a pure client-side WebAuthn call. The
-challenge is generated locally (random 32-byte array). In production, replace
-the local challenge with a server-issued one before verifying the assertion.
+**Client contract:** Requests options from `/webauthn/login/begin`, presents them to `navigator.credentials.get`, and posts the assertion to `/webauthn/login/complete`. Completion must return HTTP success with `{ "verified": true }`; HTTP success alone is insufficient. Requests use same-origin cookies and disable caching.
 
-**Returns:** `true` if the biometric credential was successfully retrieved,
-`false` if:
+**Backend dependency:** This repository does not implement these endpoints. A backend must issue expiring, single-use challenges, verify assertions against stored public keys and the expected origin/RP ID, and establish an authenticated session before returning verification success. The client boolean is UI feedback, not server authorization.
+
+**Returns:** `true` if the biometric assertion was successfully verified by the server, `false` if:
+- The username is missing or blank (there is no shared default identity)
 - WebAuthn is not supported (`window.PublicKeyCredential` is absent)
-- The user cancelled
-- An error occurred (logged as a warning)
+- The user cancelled or failed the prompt
+- Server challenge issuance or assertion verification failed (logged as a warning)
 
-**Environment:** Only works in a browser context with a registered
-authenticator. Always returns `false` in SSR (`window === undefined`).
+**Environment:** Only works in a browser context with a registered authenticator. Always returns `false` in SSR (`window === undefined`).
 
 **Example:**
 
 ```ts
 import { biometricLogin } from '@/lib/api'
 
-const ok = await biometricLogin()
+const ok = await biometricLogin('user@example.com')
 if (ok) {
   // proceed with authenticated session
 } else {
