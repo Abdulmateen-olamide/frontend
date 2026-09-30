@@ -377,7 +377,7 @@ describe('signed transactions', () => {
     rpcMock.sendTransaction
       .mockResolvedValueOnce({ status: 'TRY_AGAIN_LATER' })
       .mockResolvedValueOnce({ status: 'TRY_AGAIN_LATER' })
-      .mockImplementation(async (tx: any) => ({ status: 'PENDING', hash: tx.hash().toString('hex') }))
+      .mockImplementation(async (tx: Transaction) => ({ status: 'PENDING', hash: tx.hash().toString('hex') }))
     
     await settle(vault.submitWithdraw(100, USER, sign))
     expect(rpcMock.sendTransaction).toHaveBeenCalledTimes(3)
@@ -401,7 +401,7 @@ describe('signed transactions', () => {
 
   it('surfaces an on-chain contract failure with error code', async () => {
     const vault = await loadVault()
-    const errorVal = xdr.ScVal.scvError(new xdr.ScError.sceContract(33))
+    const errorVal = xdr.ScVal.scvError(xdr.ScError.sceContract(33))
     rpcMock.getTransaction.mockResolvedValue({
       status: 'FAILED',
       resultXdr: errorVal,
@@ -599,8 +599,8 @@ describe('view calls', () => {
   describe('fetchVaultLimits', () => {
     it('fetches and scales vault limits from the contract', async () => {
       const vault = await loadVault()
-      rpcMock.simulateTransaction.mockImplementation((tx: any) => {
-        const op = tx.operations[0]
+      rpcMock.simulateTransaction.mockImplementation((tx: Transaction) => {
+        const op = tx.operations[0] as { type: string; func: xdr.HostFunction }
         const call = op.func.invokeContract()
         const method = call.functionName().toString()
         if (method === 'is_paused') return Promise.resolve(okSimulation(xdr.ScVal.scvBool(true)))

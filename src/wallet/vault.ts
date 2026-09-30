@@ -375,7 +375,7 @@ export async function fetchVaultLimits(
       utilizationBps:
         utilVal !== undefined ? Number(scValToNative(utilVal)) : defaults.utilizationBps,
     }
-  } catch (e) {
+  } catch {
     return defaults
   }
 }
@@ -525,12 +525,26 @@ function decodeWithdrawConfirmation(
 class TransactionFailedError extends Error {}
 
 function extractContractError(result: unknown): string {
-  try {
-    const str = JSON.stringify(result, (k, v) => (typeof v === 'bigint' ? v.toString() : v))
-    const match = str.match(/"name":\s*"sceContract".*?"_value":\s*(\d+)/)
-    if (match) return `Error(Contract, #${match[1]})`
-  } catch {}
-  return ''
+  let foundCode: string | undefined
+  function walk(obj: unknown) {
+    if (foundCode || !obj || typeof obj !== 'object') return
+    if (Array.isArray(obj)) {
+      for (const item of obj) walk(item)
+      return
+    }
+    const rec = obj as Record<string, unknown>
+    const sw = rec._switch
+    if (sw && typeof sw === 'object' && (sw as Record<string, unknown>).name === 'sceContract') {
+      const val = rec._value
+      if (typeof val === 'number') {
+        foundCode = val.toString()
+        return
+      }
+    }
+    for (const value of Object.values(rec)) walk(value)
+  }
+  walk(result)
+  return foundCode ? `Error(Contract, #${foundCode})` : ''
 }
 
 /** Poll until a submitted transaction reaches a terminal status. */
@@ -579,12 +593,18 @@ async function invokeSigned(
   const horizon = new Horizon.Server(HORIZON_URL, { allowHttp: allowHttpFor(HORIZON_URL) })
   const contract = new Contract(CONTRACT_ID!)
 
-  const account = await withTimeout(
-    horizon.loadAccount(address),
-    'Stellar Horizon timed out loading account',
-  )
+  const [account, baseFee] = await Promise.all([
+    withTimeout(
+      horizon.loadAccount(address),
+      'Stellar Horizon timed out loading account',
+    ),
+    withTimeout(
+      horizon.fetchBaseFee(),
+      'Stellar Horizon timed out fetching base fee',
+    ).catch(() => 100)
+  ])
 
-  const tx = new TransactionBuilder(account, { fee: '100', networkPassphrase: NETWORK_PASSPHRASE })
+  const tx = new TransactionBuilder(account, { fee: baseFee.toString(), networkPassphrase: NETWORK_PASSPHRASE })
     .addOperation(contract.call(method, ...args))
     .setTimeout(180)
     .build()
@@ -639,7 +659,7 @@ async function invokeSigned(
       const contractErr = extractContractError(sendResult)
       const msg = contractErr 
         ? contractErr 
-        : JSON.stringify(sendResult.errorResult ?? 'unknown', (k, v) => (typeof v === 'bigint' ? v.toString() : v))
+        : JSON.stringify(sendResult.errorResult ?? 'unknown', (_, v) => (typeof v === 'bigint' ? v.toString() : v))
       throw new TransactionFailedError(`Send failed: ${msg}`)
     }
 
@@ -684,10 +704,16 @@ export async function estimateTransactionFee(
     const horizon = new Horizon.Server(HORIZON_URL, { allowHttp: allowHttpFor(HORIZON_URL) })
     const contract = new Contract(CONTRACT_ID)
 
-    const account = await withTimeout(
-      horizon.loadAccount(address),
-      'Stellar Horizon timed out loading account',
-    )
+    const [account, baseFee] = await Promise.all([
+      withTimeout(
+        horizon.loadAccount(address),
+        'Stellar Horizon timed out loading account',
+      ),
+      withTimeout(
+        horizon.fetchBaseFee(),
+        'Stellar Horizon timed out fetching base fee',
+      ).catch(() => 100)
+    ])
 
     let args: XdrTypes.ScVal[] = []
     if (kind === 'deposit') {
@@ -706,7 +732,7 @@ export async function estimateTransactionFee(
     }
 
     const tx = new TransactionBuilder(account, {
-      fee: '100',
+      fee: baseFee.toString(),
       networkPassphrase: NETWORK_PASSPHRASE,
     })
       .addOperation(contract.call(kind, ...args))
