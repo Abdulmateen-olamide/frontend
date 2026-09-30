@@ -71,9 +71,7 @@ afterEach(() => {
 
 describe('registry on-chain reads (#625)', () => {
   it('simulates total_projects with the valid default source account', async () => {
-    rpcMock.simulateTransaction.mockResolvedValue(
-      okSimulation(nativeToScVal(7, { type: 'u32' })),
-    )
+    rpcMock.simulateTransaction.mockResolvedValue(okSimulation(nativeToScVal(7, { type: 'u32' })))
     const { fetchTotalProjects, SIMULATION_SOURCE_ADDRESS } = await loadRegistry()
 
     await expect(fetchTotalProjects()).resolves.toBe(7)
@@ -95,9 +93,7 @@ describe('registry on-chain reads (#625)', () => {
   })
 
   it('allows plain http for a local quickstart RPC endpoint', async () => {
-    rpcMock.simulateTransaction.mockResolvedValue(
-      okSimulation(nativeToScVal(1, { type: 'u32' })),
-    )
+    rpcMock.simulateTransaction.mockResolvedValue(okSimulation(nativeToScVal(1, { type: 'u32' })))
     const { fetchTotalProjects } = await loadRegistry({
       NEXT_PUBLIC_SOROBAN_RPC_URL: 'http://localhost:8000/soroban/rpc',
     })
@@ -109,9 +105,7 @@ describe('registry on-chain reads (#625)', () => {
 
   it('builds simulations with the configured passphrase override', async () => {
     const passphrase = 'Standalone Network ; February 2017'
-    rpcMock.simulateTransaction.mockResolvedValue(
-      okSimulation(nativeToScVal(2, { type: 'u32' })),
-    )
+    rpcMock.simulateTransaction.mockResolvedValue(okSimulation(nativeToScVal(2, { type: 'u32' })))
     const { fetchTotalProjects } = await loadRegistry({
       NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE: passphrase,
     })
