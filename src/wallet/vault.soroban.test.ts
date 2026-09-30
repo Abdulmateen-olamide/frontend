@@ -467,7 +467,7 @@ describe('signed transactions', () => {
     )
   })
 
-  it('goes offline when Horizon does not answer, and refuses further submissions', async () => {
+  it('goes offline when Horizon does not answer, but still attempts later submissions (#624)', async () => {
     const vault = await loadVault()
     const listener = vi.fn()
     const unsubscribe = vault.onOfflineChange(listener)
@@ -478,7 +478,11 @@ describe('signed transactions', () => {
     )
     expect(vault.isOffline()).toBe(true)
     expect(listener).toHaveBeenCalledWith(true)
-    await expect(vault.submitWithdraw(100, USER, sign)).rejects.toThrow('Stellar node is offline')
+    // The next submission is NOT refused just because an earlier call timed out:
+    // it re-attempts and fails on the network, not on an offline latch.
+    await expect(settle(vault.submitWithdraw(100, USER, sign))).rejects.toThrow(
+      'Stellar Horizon timed out loading account',
+    )
     unsubscribe()
   })
 
@@ -608,7 +612,7 @@ describe('view calls', () => {
     })
   })
 
-  it('falls back to the cached values when the RPC errors', async () => {
+  it('a simulate error does not mark offline, and reads retry instead of short-circuiting (#624)', async () => {
     const vault = await loadVault()
     rpcMock.simulateTransaction.mockResolvedValue(
       okSimulation(nativeToScVal(20_000_000n, { type: 'i128' })),
@@ -616,14 +620,34 @@ describe('view calls', () => {
     await expect(vault.fetchSharePrice(USER)).resolves.toBe('2.0000000')
     await expect(vault.fetchTotalAssets(USER)).resolves.toBe(2)
 
+    // A chain-level simulate error is not a connectivity failure.
     rpcMock.simulateTransaction.mockResolvedValue({ error: 'boom' })
-    await expect(vault.fetchSharePrice(USER)).resolves.toBe('2.0000000')
-    expect(vault.isOffline()).toBe(true)
-    // Once offline, reads short-circuit to the cache without calling the RPC.
+    await expect(vault.fetchSharePrice(USER)).rejects.toThrow('Soroban simulate error: boom')
+    expect(vault.isOffline()).toBe(false)
+
+    // Reads keep hitting the network (no offline short-circuit); each rethrows.
     const calls = rpcMock.simulateTransaction.mock.calls.length
-    await expect(vault.fetchTotalAssets(USER)).resolves.toBe(2)
-    await expect(vault.fetchUtilizationBps(USER)).resolves.toBe(0)
-    expect(rpcMock.simulateTransaction).toHaveBeenCalledTimes(calls)
+    await expect(vault.fetchTotalAssets(USER)).rejects.toThrow('Soroban simulate error: boom')
+    await expect(vault.fetchUtilizationBps(USER)).rejects.toThrow('Soroban simulate error: boom')
+    expect(rpcMock.simulateTransaction.mock.calls.length).toBeGreaterThan(calls)
+  })
+
+  it('recovers without a reload after a timeout once the RPC answers again (#624)', async () => {
+    const vault = await loadVault()
+    // First read hangs → withTimeout marks the app offline.
+    rpcMock.simulateTransaction.mockReturnValueOnce(new Promise(() => {}))
+    await expect(settle(vault.fetchTotalAssets(USER))).rejects.toThrow(
+      'Stellar RPC timed out during simulation',
+    )
+    expect(vault.isOffline()).toBe(true)
+
+    // The next read is NOT short-circuited: it hits the now-healthy RPC and succeeds,
+    // clearing the offline flag — no page reload required.
+    rpcMock.simulateTransaction.mockResolvedValue(
+      okSimulation(nativeToScVal(4_820_000_000_000n, { type: 'i128' })),
+    )
+    await expect(vault.fetchTotalAssets(USER)).resolves.toBe(482_000)
+    expect(vault.isOffline()).toBe(false)
   })
 
   it('reports a simulation without a result as unavailable', async () => {
@@ -631,7 +655,7 @@ describe('view calls', () => {
     rpcMock.simulateTransaction.mockResolvedValue({ latestLedger: 1 })
     await expect(vault.fetchPortfolio(USER)).rejects.toThrow('Soroban simulate returned no result')
     rpcMock.simulateTransaction.mockResolvedValue({ error: 'nope' })
-    await expect(vault.fetchUtilizationBps(USER)).resolves.toBe(0)
+    await expect(vault.fetchUtilizationBps(USER)).rejects.toThrow('Soroban simulate error: nope')
   })
 
   describe('fetchVaultLimits', () => {
