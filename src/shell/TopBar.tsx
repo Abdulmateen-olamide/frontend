@@ -7,11 +7,11 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Button, TransactionsDrawer, useToast } from '../components'
 import { useLocaleSwitcher } from '../i18n/LocaleProvider'
-import { LOCALE_LABELS, type Locale } from '../i18n/config'
+import { LOCALE_LABELS, LOCALE_NAMES, type Locale } from '../i18n/config'
 import { useWallet, shortAddress } from '../wallet/WalletProvider'
 import { useTransactions } from '../wallet/TransactionsProvider'
 import { useTheme } from '../theme/ThemeProvider'
-import { HORIZON_URL, NETWORK_PASSPHRASE, networkLabel } from '../config/network'
+import { HORIZON_URL, NETWORK_PASSPHRASE, networkLabel, getExplorerAccountUrl } from '../config/network'
 import { networkMismatchMessage } from '../wallet/networkGuard'
 
 /** "Testnet", "Standalone", … — shown as a persistent pill on non-mainnet builds (#611). */
@@ -430,6 +430,7 @@ function LocaleDropdown() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   useEffect(() => {
     if (!open) return
@@ -443,18 +444,42 @@ function LocaleDropdown() {
   useEffect(() => {
     if (open) {
       setTimeout(() => {
-        const items = ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]')
-        items?.[0]?.focus()
+        const locales = Object.keys(LOCALE_LABELS) as Locale[]
+        const currentIndex = locales.indexOf(locale)
+        itemRefs.current[currentIndex]?.focus()
       }, 0)
     }
-  }, [open])
+  }, [open, locale])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
+    const items = itemRefs.current.filter((el): el is HTMLButtonElement => el !== null)
+    if (!items.length) return
+    const focused = document.activeElement
+    const idx = items.indexOf(focused as HTMLButtonElement)
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      items[(idx + 1) % items.length].focus()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      items[(idx - 1 + items.length) % items.length].focus()
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      items[0].focus()
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      items[items.length - 1].focus()
+    } else if (e.key === 'Escape') {
       setOpen(false)
       triggerRef.current?.focus()
+    } else if (e.key === 'Tab') {
+      setOpen(false)
     }
   }
+
+  // Reset item refs array before each render
+  // eslint-disable-next-line react-hooks/refs
+  itemRefs.current = []
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -500,7 +525,11 @@ function LocaleDropdown() {
           {(Object.keys(LOCALE_LABELS) as Locale[]).map((code) => (
             <button
               key={code}
-              role="menuitem"
+              ref={(el) => {
+                itemRefs.current.push(el)
+              }}
+              role="menuitemradio"
+              aria-checked={code === locale}
               tabIndex={-1}
               type="button"
               onClick={() => {
@@ -522,7 +551,7 @@ function LocaleDropdown() {
                 background: 'transparent',
               }}
             >
-              {LOCALE_LABELS[code]}
+              <span lang={code}>{LOCALE_NAMES[code]}</span>
             </button>
           ))}
         </div>
@@ -854,7 +883,7 @@ function WalletMenu({
               ref={(el) => {
                 itemRefs.current.push(el)
               }}
-              href={`https://stellar.expert/explorer/testnet/account/${address}`}
+              href={getExplorerAccountUrl(address)}
             >
               {t('viewOnExplorer')}
             </MenuLink>

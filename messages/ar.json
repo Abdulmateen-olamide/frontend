@@ -209,7 +209,8 @@
     "referralLink": "Your referral link",
     "referralCaption": "Share your link to invite friends. You both get rewards when they invest.",
     "copyLink": "Copy link",
-    "copied": "Copied"
+    "copied": "Copied",
+    "taxReports": "التقارير الضريبية"
   },
   "Withdraw": {
     "h1": "سحب من المجمع",
@@ -407,6 +408,28 @@
     "priceLabel": "السعر",
     "yieldHistory": "سجل العائد",
     "yieldLabel": "العائد"
+  },
+  "PriceHistory": {
+    "title": "تسعير السند",
+    "caption": "ملاحظات موثقة من Oracle، {range}.",
+    "ariaLabel": "سجل أسعار السند",
+    "priceLabel": "السعر",
+    "priceUnit": "% من القيمة الاسمية",
+    "priceAriaLabel": "اتجاه سجل الأسعار",
+    "yieldLabel": "العائد",
+    "yieldAriaLabel": "اتجاه سجل العوائد",
+    "since": "منذ {date}"
+  },
+  "TaxReports": {
+    "title": "التقارير الضريبية الفصلية",
+    "exportCsv": "تصدير CSV",
+    "disclaimer": "هذا ملخص توضيحي لحفظ السجلات، وليس نصيحة ضريبية. استشر متخصصاً ضريبياً لإقرارك.",
+    "columnQuarter": "الربع",
+    "columnDeposits": "الإيداعات",
+    "columnWithdrawals": "السحوبات",
+    "columnDistributions": "التوزيعات",
+    "columnRealizedGain": "الربح المحقق",
+    "currencyFormat": "{amount} $"
   },
   "PasswordResetEmail": {
     "subject": "إعادة تعيين كلمة مرور Heliobond",

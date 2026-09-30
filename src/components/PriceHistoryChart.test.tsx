@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen } from '../test/render'
 import PriceHistoryChart from './PriceHistoryChart'
 import { selectPriceHistory } from '../state/selectors'
 
@@ -19,7 +19,7 @@ describe('PriceHistoryChart', () => {
   })
 
   it('renders nothing for an unknown project (safe empty state)', () => {
-    const { container } = render(<PriceHistoryChart projectId={9999} />)
-    expect(container).toBeEmptyDOMElement()
+    render(<PriceHistoryChart projectId={9999} />)
+    expect(screen.queryByLabelText('Bond price history')).not.toBeInTheDocument()
   })
 })

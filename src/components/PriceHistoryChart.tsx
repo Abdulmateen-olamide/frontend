@@ -1,8 +1,7 @@
-'use client'
-
 import { memo } from 'react'
+import { useTranslations } from 'next-intl'
 import { Sparkline } from './Sparkline'
-import { formatMoney } from '../lib/format'
+import { formatDecimal } from '../lib/format'
 import { selectPriceHistory } from '../state/selectors'
 import type { PricePoint } from '../data/projectDetails'
 
@@ -62,6 +61,7 @@ function delta(first: number, last: number): string {
 }
 
 export function PriceHistoryChart({ projectId }: PriceHistoryChartProps) {
+  const t = useTranslations('PriceHistory')
   // Flat selector — one call, no nested-state drilling.
   const history: PricePoint[] = selectPriceHistory(projectId)
   if (history.length === 0) return null
@@ -70,7 +70,7 @@ export function PriceHistoryChart({ projectId }: PriceHistoryChartProps) {
   const first = history[0]
 
   return (
-    <section style={cardStyle} aria-label="Bond price history">
+    <section style={cardStyle} aria-label={t('ariaLabel')}>
       <h2
         style={{
           fontFamily: 'var(--font-display)',
@@ -81,40 +81,45 @@ export function PriceHistoryChart({ projectId }: PriceHistoryChartProps) {
           letterSpacing: '-0.01em',
         }}
       >
-        Bond pricing
+        {t('title')}
       </h2>
       <p style={captionStyle}>
-        Oracle-verified observations, {history.length > 1 ? `${first.date} – ${last.date}` : last.date}.
+        {t('caption', {
+          range: history.length > 1 ? `${first.date} – ${last.date}` : last.date
+        })}
       </p>
 
       <div style={seriesRowStyle}>
-        <span style={seriesLabelStyle}>Price</span>
+        <span style={seriesLabelStyle}>{t('priceLabel')}</span>
         <Sparkline
           points={history.map((p) => p.price)}
-          aria-label="Price history trend"
+          aria-label={t('priceAriaLabel')}
           width={180}
           height={40}
         />
-        <span style={seriesValueStyle}>{formatMoney(last.price)}</span>
+        <span style={seriesValueStyle}>
+          {formatDecimal(last.price, 2)}
+          {t('priceUnit')}
+        </span>
         {history.length > 1 && (
           <span style={captionStyle}>
-            {delta(first.price, last.price)} since {first.date}
+            {delta(first.price, last.price)} {t('since', { date: first.date })}
           </span>
         )}
       </div>
 
       <div style={seriesRowStyle}>
-        <span style={seriesLabelStyle}>Yield</span>
+        <span style={seriesLabelStyle}>{t('yieldLabel')}</span>
         <Sparkline
           points={history.map((p) => p.yield)}
-          aria-label="Yield history trend"
+          aria-label={t('yieldAriaLabel')}
           width={180}
           height={40}
         />
         <span style={seriesValueStyle}>{last.yield.toFixed(2)}%</span>
         {history.length > 1 && (
           <span style={captionStyle}>
-            {delta(first.yield, last.yield)}pp since {first.date}
+            {delta(first.yield, last.yield)}pp {t('since', { date: first.date })}
           </span>
         )}
       </div>

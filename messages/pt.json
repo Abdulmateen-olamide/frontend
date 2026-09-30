@@ -191,7 +191,8 @@
     "referralLink": "Your referral link",
     "referralCaption": "Share your link to invite friends. You both get rewards when they invest.",
     "copyLink": "Copy link",
-    "copied": "Copied"
+    "copied": "Copied",
+    "taxReports": "Relatórios fiscais"
   },
   "Withdraw": {
     "h1": "Withdraw from the pool",
@@ -389,6 +390,28 @@
     "priceLabel": "Preço",
     "yieldHistory": "Histórico de rendimento",
     "yieldLabel": "Rendimento"
+  },
+  "PriceHistory": {
+    "title": "Preço do título",
+    "caption": "Observações verificadas pelo oráculo, {range}.",
+    "ariaLabel": "Histórico de preços do título",
+    "priceLabel": "Preço",
+    "priceUnit": "% do valor nominal",
+    "priceAriaLabel": "Tendência do histórico de preços",
+    "yieldLabel": "Rendimento",
+    "yieldAriaLabel": "Tendência do histórico de rendimentos",
+    "since": "desde {date}"
+  },
+  "TaxReports": {
+    "title": "Relatórios fiscais trimestrais",
+    "exportCsv": "Exportar CSV",
+    "disclaimer": "Este é um resumo ilustrativo para manutenção de registros, não consultoria fiscal. Consulte um profissional tributário para sua declaração.",
+    "columnQuarter": "Trimestre",
+    "columnDeposits": "Depósitos",
+    "columnWithdrawals": "Retiradas",
+    "columnDistributions": "Distribuições",
+    "columnRealizedGain": "Ganho realizado",
+    "currencyFormat": "US$ {amount}"
   },
   "PasswordResetEmail": {
     "subject": "Redefinição de Senha - Heliobond",
