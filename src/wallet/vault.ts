@@ -598,10 +598,7 @@ async function invokeSigned(
       horizon.loadAccount(address),
       'Stellar Horizon timed out loading account',
     ),
-    withTimeout(
-      horizon.fetchBaseFee(),
-      'Stellar Horizon timed out fetching base fee',
-    ).catch(() => 100)
+    horizon.fetchBaseFee().catch(() => 100)
   ])
 
   const tx = new TransactionBuilder(account, { fee: baseFee.toString(), networkPassphrase: NETWORK_PASSPHRASE })
@@ -709,10 +706,7 @@ export async function estimateTransactionFee(
         horizon.loadAccount(address),
         'Stellar Horizon timed out loading account',
       ),
-      withTimeout(
-        horizon.fetchBaseFee(),
-        'Stellar Horizon timed out fetching base fee',
-      ).catch(() => 100)
+      horizon.fetchBaseFee().catch(() => 100)
     ])
 
     let args: XdrTypes.ScVal[] = []
