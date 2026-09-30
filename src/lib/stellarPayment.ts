@@ -1,3 +1,4 @@
+import { StrKey } from '@stellar/stellar-sdk'
 import { STELLAR_MAX_MEMO_TEXT_BYTES, type StellarMemoType } from '../types'
 
 export { STELLAR_MAX_MEMO_TEXT_BYTES }
@@ -7,7 +8,58 @@ export type { StellarMemoType }
 export const STELLAR_MAX_MEMO_ID = BigInt('18446744073709551615')
 
 /** Stellar public address regex (56-character base32 starting with G). */
-const STELLAR_ADDRESS_REGEX = /^G[A-Z2-7]{55}$/
+export const STELLAR_ADDRESS_REGEX = /^G[A-Z2-7]{55}$/
+
+export interface AddressValidationResult {
+  valid: boolean
+  error?: string
+}
+
+/**
+ * Validates a Stellar public address (starts with G, 56 characters, valid base32, and valid CRC16 checksum).
+ * Catches typos that length-only or regex-only checks miss.
+ */
+export function validateStellarAddress(
+  address: string | null | undefined,
+): AddressValidationResult {
+  if (!address || typeof address !== 'string' || address.trim() === '') {
+    return {
+      valid: false,
+      error: 'Invalid Stellar public address: address is required',
+    }
+  }
+
+  const trimmed = address.trim()
+
+  if (!STELLAR_ADDRESS_REGEX.test(trimmed)) {
+    return {
+      valid: false,
+      error: 'Invalid Stellar public address (must start with G and be 56 characters)',
+    }
+  }
+
+  if (!StrKey.isValidEd25519PublicKey(trimmed)) {
+    return {
+      valid: false,
+      error: 'Invalid Stellar public address checksum (please check for typos)',
+    }
+  }
+
+  return { valid: true }
+}
+
+/**
+ * Returns true if the address is a valid Stellar public key with a valid checksum.
+ */
+export function isValidStellarAddress(address: string | null | undefined): boolean {
+  return validateStellarAddress(address).valid
+}
+
+/** Alias for validateStellarAddress */
+export const validatePublicKey = validateStellarAddress
+
+/** Alias for isValidStellarAddress */
+export const isValidPublicKey = isValidStellarAddress
 
 /** 32-byte hexadecimal hash regex (64 hex characters). */
 const HEX_32_BYTES_REGEX = /^[0-9a-fA-F]{64}$/
@@ -211,8 +263,9 @@ export function validateStellarPayment(
 
   // Destination address validation (optional if depositing into a known vault)
   if (params.destination !== undefined) {
-    if (!params.destination || !STELLAR_ADDRESS_REGEX.test(params.destination.trim())) {
-      errors.destination = 'Invalid Stellar public address (must start with G and be 56 characters)'
+    const addressValidation = validateStellarAddress(params.destination)
+    if (!addressValidation.valid) {
+      errors.destination = addressValidation.error ?? 'Invalid Stellar public address'
     }
   }
 

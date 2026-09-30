@@ -32,7 +32,16 @@ import {
 } from '../config/network'
 import type { xdr as XdrTypes } from '@stellar/stellar-sdk'
 import { notifyTransactionConfirmed } from './vaultEvents'
-import { validateMemo, validateStellarPayment, type StellarMemoType } from '../lib/stellarPayment'
+import {
+  validateMemo,
+  validateStellarPayment,
+  validateStellarAddress,
+  isValidStellarAddress,
+  validatePublicKey,
+  isValidPublicKey,
+  type StellarMemoType,
+  type AddressValidationResult,
+} from '../lib/stellarPayment'
 import { MIN_DEPOSIT_USDC, MIN_WITHDRAW_SHARES } from '../config/vault'
 
 /** USDC and HBS shares are i128 values with 7 decimals on-chain. */
@@ -41,6 +50,14 @@ const SCALE = 1e7
 /** Convert a display amount to the contract's i128 units. */
 export function toStroops(amount: number): bigint {
   return BigInt(Math.round(amount * SCALE))
+}
+
+export {
+  validateStellarAddress,
+  isValidStellarAddress,
+  validatePublicKey,
+  isValidPublicKey,
+  type AddressValidationResult,
 }
 
 export interface WithdrawPreview {

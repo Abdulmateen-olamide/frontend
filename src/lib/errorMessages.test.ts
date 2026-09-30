@@ -51,4 +51,25 @@ describe('errorMessages mapping', () => {
       'Memo is too long — Stellar text memos must be 28 bytes or fewer.',
     )
   })
+
+  it('maps invalid_address and address_checksum_failed codes to user-friendly message', () => {
+    expect(getFriendlyErrorMessage('invalid_address')).toBe(
+      'Invalid Stellar address — please check the address for typos.',
+    )
+    expect(getFriendlyErrorMessage('address_checksum_failed')).toBe(
+      'Invalid Stellar address checksum — please check for typos.',
+    )
+    expect(getFriendlyErrorMessage('invalid_destination')).toBe(
+      'Invalid destination address — please check the address for typos.',
+    )
+  })
+
+  it('detects cryptic backend error messages mentioning address checksum and translates them', () => {
+    expect(
+      getFriendlyErrorMessage('Invalid Stellar public address checksum (please check for typos)'),
+    ).toBe('Invalid Stellar address — please check the address for typos.')
+    expect(getFriendlyErrorMessage('Error: Stellar address checksum verification failed')).toBe(
+      'Invalid Stellar address — please check the address for typos.',
+    )
+  })
 })

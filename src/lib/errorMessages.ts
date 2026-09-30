@@ -23,6 +23,11 @@ const ERROR_CODE_MAP: Record<string, string> = {
   invalid_memo: 'Invalid memo — text memos must be 28 bytes or fewer.',
   tx_malformed: 'Transaction malformed — please check your transaction inputs and memo.',
   op_malformed: 'Transaction operation malformed — please check your inputs.',
+  invalid_address: 'Invalid Stellar address — please check the address for typos.',
+  invalid_destination: 'Invalid destination address — please check the address for typos.',
+  invalid_public_key: 'Invalid public key — please check the address for typos.',
+  invalid_stellar_address: 'Invalid Stellar address — please check the address for typos.',
+  address_checksum_failed: 'Invalid Stellar address checksum — please check for typos.',
   internal_server_error: 'We are having trouble right now - please try again shortly.',
   server_error: 'We are having trouble right now - please try again shortly.',
   internal_error: 'Something went wrong on our side - please try again.',
@@ -37,6 +42,7 @@ const FALLBACK_MESSAGE = 'Something went wrong - please try again.'
 
 const STELLAR_UNREACHABLE_MESSAGE = ERROR_CODE_MAP.stellar_unreachable
 const MEMO_TOO_LONG_MESSAGE = ERROR_CODE_MAP.memo_too_long
+const INVALID_ADDRESS_MESSAGE = ERROR_CODE_MAP.invalid_address
 
 // Keywords that indicate a network connectivity issue with the Stellar node.
 const NETWORK_ERROR_PATTERNS = [
@@ -80,11 +86,25 @@ function looksLikeMemoError(message: string): boolean {
   )
 }
 
+function looksLikeAddressError(message: string): boolean {
+  const lower = message.toLowerCase()
+  return (
+    (lower.includes('stellar') ||
+      lower.includes('destination') ||
+      lower.includes('public key') ||
+      lower.includes('address')) &&
+    (lower.includes('checksum') ||
+      lower.includes('typo') ||
+      lower.includes('must start with g') ||
+      lower.includes('invalid stellar public address'))
+  )
+}
+
 function normalizeCode(code: string): string {
   return code
     .trim()
     .toLowerCase()
-    .replace(/[\\s-]+/g, '_')
+    .replace(/[\s-]+/g, '_')
 }
 
 function extractCodeFromError(error: unknown): string | null {
@@ -128,6 +148,11 @@ export function getFriendlyErrorMessage(codeOrMessage: string): string {
   // If the error message describes a memo issue, return a clear memo error.
   if (looksLikeMemoError(codeOrMessage)) {
     return MEMO_TOO_LONG_MESSAGE
+  }
+
+  // If the error message describes an address or public key issue, return a clear address error.
+  if (looksLikeAddressError(codeOrMessage)) {
+    return INVALID_ADDRESS_MESSAGE
   }
 
   // If the error looks like a network/connection issue, degrade gracefully.
