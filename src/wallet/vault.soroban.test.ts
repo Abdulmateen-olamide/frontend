@@ -97,7 +97,10 @@ async function settle<T>(run: Promise<T>): Promise<T> {
   void guarded.then(() => {
     settled = true
   })
-  for (let i = 0; i < 100 && !settled; i++) await vi.runAllTimersAsync()
+  for (let i = 0; i < 100 && !settled; i++) {
+    await vi.dynamicImportSettled()
+    await vi.runAllTimersAsync()
+  }
   const res = await guarded
   if (!res.ok) throw res.e
   return res.v
