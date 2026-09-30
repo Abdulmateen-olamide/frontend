@@ -69,7 +69,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<(SessionToken & { address: string }) | null>(null)
   const [signingIn, setSigningIn] = useState(false)
   const [error, setError] = useState<string | null>(null)
-// Addresses the user already declined/failed to sign for, so we don't nag.
+  // Addresses the user already declined/failed to sign for, so we don't nag.
   const attempted = useRef<Set<string>>(new Set())
 
   const addressRef = useRef(address)
@@ -185,7 +185,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await endSession(token)
   }, [clear])
 
-// Address changed or wallet disconnected: handled by `activeSession` above,
+  // Address changed or wallet disconnected: handled by `activeSession` above,
   // so the stale token stops being usable without an extra render pass (#598).
 
   // On connect: restore silently via the refresh cookie, else ask for a signature once.
@@ -210,7 +210,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   // Silent refresh shortly before expiry, with jitter and pause-while-hidden.
   useEffect(() => {
-// Keyed on the derived session so an invalidated token stops being refreshed.
+    // Keyed on the derived session so an invalidated token stops being refreshed.
     if (!activeSession) return
 
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -218,10 +218,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const scheduleTimer = () => {
       // Small jitter (0-5s) to avoid synchronised refreshes across tabs.
       const jitter = Math.floor(Math.random() * 5_000)
-      const delay = Math.max(
-        activeSession.expiresAt - Date.now() - REFRESH_LEAD_MS - jitter,
-        5_000,
-      )
+      const delay = Math.max(activeSession.expiresAt - Date.now() - REFRESH_LEAD_MS - jitter, 5_000)
 
       timer = setTimeout(async () => {
         if (typeof document !== 'undefined' && document.hidden) {

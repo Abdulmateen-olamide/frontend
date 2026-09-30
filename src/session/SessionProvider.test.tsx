@@ -112,7 +112,10 @@ describe('SessionProvider', () => {
     const verifyBody = JSON.parse(
       fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/auth/verify'))![1].body,
     )
-    expect(verifyBody).toMatchObject({ address: walletMock.get().address, signature: 'signed-message' })
+    expect(verifyBody).toMatchObject({
+      address: walletMock.get().address,
+      signature: 'signed-message',
+    })
 
     // Authenticated call carries the bearer token.
     const data = await act(() => session.authedFetch<number[]>('/me/watchlist'))
