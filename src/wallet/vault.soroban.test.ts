@@ -622,7 +622,6 @@ describe('view calls', () => {
     it('fetches and scales vault limits from the contract', async () => {
       const vault = await loadVault()
       rpcMock.simulateTransaction.mockImplementation((tx: Transaction) => {
-        const op = tx.operations[0] as { type: string; func: xdr.HostFunction }
         // Only invoke-contract operations reach `fetchVaultLimits`.
         const op = tx.operations.find((candidate) => 'func' in candidate)
         if (!op || !('func' in op)) throw new Error('expected an invoke-contract operation')
