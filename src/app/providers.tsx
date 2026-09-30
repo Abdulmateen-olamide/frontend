@@ -13,6 +13,7 @@ import { usePathname } from 'next/navigation'
 import { useReportWebVitals } from 'next/web-vitals'
 import { track } from '../lib/analytics'
 import { installGlobalErrorHandlers, reportWebVitals } from '../lib/errorReporting'
+import { TelemetryConsent } from '../components/TelemetryConsent'
 import { HORIZON_URL } from '../config/network'
 
 function Analytics() {
@@ -168,6 +169,7 @@ export function Providers({ children }: { children: ReactNode }) {
                 <RecurringInvestmentSync />
                 <Analytics />
                 <Telemetry />
+                <TelemetryConsent />
                 <SessionWatcher />
                 <OfflineBanner />
                 {children}

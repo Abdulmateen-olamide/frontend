@@ -490,5 +490,16 @@
     "category_bridge": "This cross-chain transfer couldn't be completed. Contact support if it keeps happening.",
     "category_governance": "This vote or proposal can't be processed in its current state.",
     "unknown": "The contract rejected this transaction. Please try again, and contact support if it keeps happening."
+  },
+  "Telemetry": {
+    "label": "Telemetry",
+    "title": "Help us improve Heliobond",
+    "body": "May we send anonymous error reports and page-performance metrics? We never send wallet addresses, transaction hashes, emails or transaction data.",
+    "learnMore": "What we collect",
+    "accept": "Allow",
+    "decline": "No thanks",
+    "statusOn": "Allowed",
+    "statusOff": "Off",
+    "statusUndecided": "Not set"
   }
 }

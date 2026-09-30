@@ -497,5 +497,16 @@
     "category_bridge": "Ce transfert inter-chaînes n'a pas pu être effectué. Contactez le support si le problème persiste.",
     "category_governance": "Ce vote ou cette proposition ne peut pas être traité dans son état actuel.",
     "unknown": "Le contrat a rejeté cette transaction. Veuillez réessayer et contacter le support si le problème persiste."
+  },
+  "Telemetry": {
+    "label": "Télémétrie",
+    "title": "Aidez-nous à améliorer Heliobond",
+    "body": "Pouvons-nous envoyer des rapports d'erreurs anonymes et des mesures de performance des pages ? Nous n'envoyons jamais d'adresses de portefeuille, de hashes de transaction, d'adresses e-mail ni de données de transaction.",
+    "learnMore": "Ce que nous collectons",
+    "accept": "Autoriser",
+    "decline": "Non merci",
+    "statusOn": "Autorisée",
+    "statusOff": "Désactivée",
+    "statusUndecided": "Non définie"
   }
 }

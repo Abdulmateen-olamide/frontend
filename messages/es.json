@@ -516,5 +516,16 @@
     "category_bridge": "No se pudo completar esta transferencia entre cadenas. Contacta con soporte si sigue ocurriendo.",
     "category_governance": "Este voto o propuesta no se puede procesar en su estado actual.",
     "unknown": "El contrato rechazó esta transacción. Inténtalo de nuevo y contacta con soporte si sigue ocurriendo."
+  },
+  "Telemetry": {
+    "label": "Telemetría",
+    "title": "Ayúdanos a mejorar Heliobond",
+    "body": "¿Podemos enviar informes de errores anónimos y métricas de rendimiento de la página? Nunca enviamos direcciones de cartera, hashes de transacción, correos electrónicos ni datos de transacción.",
+    "learnMore": "Qué recopilamos",
+    "accept": "Permitir",
+    "decline": "No, gracias",
+    "statusOn": "Permitida",
+    "statusOff": "Desactivada",
+    "statusUndecided": "Sin definir"
   }
 }

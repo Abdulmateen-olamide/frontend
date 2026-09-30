@@ -34,6 +34,8 @@ once it cuts its first tagged release (it currently ships continuously from
 - Preemptive session timeout warning on auth forms, so in-progress form data
   isn't silently lost (#352).
 - Return projection on the investment form.
+- Telemetry consent banner on first visit, plus a privacy control in the footer to
+  change the choice later (#658).
 
 ### Changed
 
@@ -42,9 +44,14 @@ once it cuts its first tagged release (it currently ships continuously from
   Google CDNs via render-blocking CSS imports (#387).
 - Auth login now detects existing social accounts during email login to
   prevent duplicate accounts (#353).
+- Client telemetry (error reports and web-vitals) is now opt-in: nothing is sent
+  until you allow it from the consent banner, and the footer control lets you
+  change that choice (#658).
 
 ### Fixed
 
+- Addresses, transaction hashes and emails passed in an error report's context are
+  now redacted before they are sent (#658).
 - Fixed transaction hashes wrapping awkwardly on mobile and made them easier to
   copy (#418).
 - Investment form leading zeros, a nav prop mismatch, and decimal rounding.
