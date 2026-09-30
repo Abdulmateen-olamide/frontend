@@ -157,6 +157,10 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+// Each test re-imports the Stellar SDK after vi.resetModules(), which can exceed
+// the 5s default on a loaded coverage runner.
+vi.setConfig({ testTimeout: 30_000 })
+
 describe('signed transactions', () => {
   it.each(['deposit', 'withdraw', 'claim', 'claim_yield'] as const)(
     'persists %s before sending and tracks confirmation',
