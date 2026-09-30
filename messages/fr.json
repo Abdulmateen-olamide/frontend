@@ -390,8 +390,7 @@
     "calcSummary": "Comment cela est-il calculé ?",
     "calcFormula": "rendement attendu = investissement × (crédit + vert) ÷ 200 — lisez-le dans le contrat ↗",
     "investCta": "Investir dans le pool qui finance cela",
-    "investNote": "Vous investissez dans le pool commun, qui finance ce projet parmi d'autres — pas une caisse par projet."
-  ,
+    "investNote": "Vous investissez dans le pool commun, qui finance ce projet parmi d'autres — pas une caisse par projet.",
     "pricingTitle": "Cours de l'obligation",
     "priceHistory": "Historique des prix",
     "priceLabel": "Prix",

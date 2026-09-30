@@ -161,9 +161,7 @@ export function YieldAlertProvider({ children }: { children: ReactNode }) {
     (alertId: string, threshold: number, operator: AlertOperator) => {
       commit(
         alertsRef.current.map((a) =>
-          a.id === alertId
-            ? { ...a, threshold, operator, lastTriggeredAt: undefined }
-            : a,
+          a.id === alertId ? { ...a, threshold, operator, lastTriggeredAt: undefined } : a,
         ),
       )
     },

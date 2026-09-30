@@ -4,6 +4,7 @@ This document defines the architecture of the Heliobond investor application and
 
 > **Implementation Note & Scope:**
 > Heliobond is architected to operate in two modes:
+>
 > 1. **Live On-Chain Mode (Soroban Testnet):** When `NEXT_PUBLIC_VAULT_CONTRACT_ID` and wallet connections are active, core vault accounting (`share_price`, `total_assets`) and transactional flows (`deposit`, `withdraw`) execute directly against deployed Soroban smart contracts.
 > 2. **Simulated / Fixture Mode:** When contract IDs are unset or in demo wallet mode, the application falls back gracefully to deterministic typed fixtures (`src/data.ts`, `src/data/*`) and synchronous client simulations (`src/wallet/vault.ts`).
 >
@@ -15,20 +16,21 @@ This document defines the architecture of the Heliobond investor application and
 
 The investment pool is governed by Soroban smart contract logic mirroring ERC-4626 tokenized vault standards on Stellar (denominated in USDC with HBS pool share tokens). The frontend client layer is implemented in [`src/wallet/vault.ts`](src/wallet/vault.ts) and consumed by [`src/wallet/useVault.ts`](src/wallet/useVault.ts).
 
-| Contract Method / Concept | Client Function / Binding | Type | Description |
-| :--- | :--- | :--- | :--- |
-| `share_price` | `fetchSharePrice(sourceAddress)` | View Read | Reads total assets / total supply ratio via Soroban RPC simulation. Fallback: `vault.sharePrice()`. |
-| `total_assets` | `fetchTotalAssets(sourceAddress)` | View Read | Reads total USDC controlled by the vault via Soroban RPC simulation. Fallback: `HB_DATA.pool.totalAssets`. |
-| `convert_to_shares` | `vault.convertToShares(usdc)`<br>`vault.previewDeposit(usdc)` | Client Math / Sim | Converts USDC amount to equivalent HBS shares based on current `share_price` for immediate input preview. |
-| `convert_to_assets` | `vault.convertToAssets(shares)`<br>`vault.previewWithdraw(usdc)` | Client Math / Sim | Converts HBS shares to equivalent USDC asset value based on `share_price`. |
-| `deposit` | `submitDeposit(amount, address, sign, signal)` | Signed Tx | Builds transaction invoking contract `deposit(amount, min_shares)`, simulates via RPC, requests wallet signature, submits to network, and polls confirmation. |
-| `withdraw` | `submitWithdraw(amount, address, sign, signal)` | Signed Tx | Builds transaction invoking contract `withdraw(shares, min_assets)`, simulates, requests wallet signature, submits, and polls confirmation. |
+| Contract Method / Concept | Client Function / Binding                                        | Type              | Description                                                                                                                                                   |
+| :------------------------ | :--------------------------------------------------------------- | :---------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `share_price`             | `fetchSharePrice(sourceAddress)`                                 | View Read         | Reads total assets / total supply ratio via Soroban RPC simulation. Fallback: `vault.sharePrice()`.                                                           |
+| `total_assets`            | `fetchTotalAssets(sourceAddress)`                                | View Read         | Reads total USDC controlled by the vault via Soroban RPC simulation. Fallback: `HB_DATA.pool.totalAssets`.                                                    |
+| `convert_to_shares`       | `vault.convertToShares(usdc)`<br>`vault.previewDeposit(usdc)`    | Client Math / Sim | Converts USDC amount to equivalent HBS shares based on current `share_price` for immediate input preview.                                                     |
+| `convert_to_assets`       | `vault.convertToAssets(shares)`<br>`vault.previewWithdraw(usdc)` | Client Math / Sim | Converts HBS shares to equivalent USDC asset value based on `share_price`.                                                                                    |
+| `deposit`                 | `submitDeposit(amount, address, sign, signal)`                   | Signed Tx         | Builds transaction invoking contract `deposit(amount, min_shares)`, simulates via RPC, requests wallet signature, submits to network, and polls confirmation. |
+| `withdraw`                | `submitWithdraw(amount, address, sign, signal)`                  | Signed Tx         | Builds transaction invoking contract `withdraw(shares, min_assets)`, simulates, requests wallet signature, submits, and polls confirmation.                   |
 
 ---
 
 ## 2. Surface-by-Surface Contract Integration Map
 
 ### 2.1 Landing
+
 - **Route:** `/` (`src/screens/Landing.tsx`)
 - **Current Data Source:** Mock / fixture data (`HB_DATA.pool` in `src/data.ts`).
 - **Expected Soroban Read Dependency:**
@@ -39,6 +41,7 @@ The investment pool is governed by Soroban smart contract logic mirroring ERC-46
 - **Relevant Vault / Client Function:** `fetchTotalAssets`, `useVault()`, `LiveHelio`.
 
 ### 2.2 Connect
+
 - **Route:** `/connect` (`src/screens/Connect.tsx`)
 - **Current Data Source:** Live wallet integration via `@creit.tech/stellar-wallets-kit` (`src/wallet/WalletProvider.tsx`) with fallback demo session (`connectDemo`).
 - **Expected Soroban Read Dependency:**
@@ -47,6 +50,7 @@ The investment pool is governed by Soroban smart contract logic mirroring ERC-46
 - **Relevant Vault / Client Function:** `useWallet().connect()`, `useWallet().connectDemo()`, `useWallet().sign()`.
 
 ### 2.3 Explore
+
 - **Route:** `/explore` (`src/screens/Explore.tsx`)
 - **Current Data Source:** Mock / fixture data (`HB_DATA.projects`) with optional REST API fallback (`src/lib/api.ts` `getProjects()`).
 - **Expected Soroban Read Dependency:**
@@ -56,6 +60,7 @@ The investment pool is governed by Soroban smart contract logic mirroring ERC-46
 - **Relevant Vault / Client Function:** `getProjects()` (currently REST/fixture client; future on-chain registry reader).
 
 ### 2.4 Project Detail
+
 - **Route:** `/project/[id]` (`src/screens/ProjectDetail.tsx`)
 - **Current Data Source:** Fixture data (`PROJECT_DETAILS` in `src/data/projectDetails.ts`, `HB_DATA.projects`) or API client (`src/lib/api.ts` `getProject(id)`).
 - **Expected Soroban Read Dependency:**
@@ -66,6 +71,7 @@ The investment pool is governed by Soroban smart contract logic mirroring ERC-46
 - **Relevant Vault / Client Function:** `getProject(id)` (future Soroban project & oracle history query).
 
 ### 2.5 Deposit
+
 - **Route:** `/deposit` (`src/screens/Deposit.tsx`)
 - **Current Data Source:** Active Soroban contract integration when `NEXT_PUBLIC_VAULT_CONTRACT_ID` is set; synchronous simulation in demo mode or without env configuration.
 - **Expected Soroban Read Dependency:**
@@ -79,6 +85,7 @@ The investment pool is governed by Soroban smart contract logic mirroring ERC-46
   - Transaction: `submitDeposit(amount, address, sign, signal)`.
 
 ### 2.6 Portfolio
+
 - **Route:** `/portfolio` (`src/screens/Portfolio.tsx`)
 - **Current Data Source:** Mock / fixture data (`HB_DATA.you`, `HB_DATA.activity`, `HB_DATA.pool` in `src/data.ts`) when connected.
 - **Expected Soroban Read Dependency:**
@@ -91,6 +98,7 @@ The investment pool is governed by Soroban smart contract logic mirroring ERC-46
 - **Relevant Vault / Client Function:** `vault.convertToAssets`, `useVault()`, future user account position reader.
 
 ### 2.7 Withdraw
+
 - **Route:** `/withdraw` (`src/screens/Withdraw.tsx`)
 - **Current Data Source:** Active Soroban contract integration when `NEXT_PUBLIC_VAULT_CONTRACT_ID` is set; simulated 2-second delay in demo mode. Liquid cap is currently fixture-backed (`liquid = 236`).
 - **Expected Soroban Read Dependency:**
@@ -104,6 +112,7 @@ The investment pool is governed by Soroban smart contract logic mirroring ERC-46
   - Transaction: `submitWithdraw(amount, address, sign, signal)`.
 
 ### 2.8 Creator
+
 - **Route:** `/creator` (`src/screens/creator/*`)
 - **Current Data Source:** Mock / fixture data (`CREATOR_APPLICATION`, `DRAFT_PROJECT`, `CREATOR_DASHBOARD` in `src/data/creator.ts`). Form submission updates local state.
 - **Expected Soroban Read Dependency:**
@@ -117,6 +126,7 @@ The investment pool is governed by Soroban smart contract logic mirroring ERC-46
 - **Relevant Vault / Client Function:** Future `CreatorClient` / `WhitelistClient` (currently typed fixture models in `src/data/creator.ts`).
 
 ### 2.9 Admin / Oracle
+
 - **Route:** `/admin` (`src/screens/admin/*`)
 - **Current Data Source:** Internal console using fixture data (`VAULT_STATS`, `REGISTRY`, `WHITELIST` in `src/data/admin.ts`) with interactive in-memory state mutations.
 - **Expected Soroban Read Dependency:**
@@ -133,17 +143,17 @@ The investment pool is governed by Soroban smart contract logic mirroring ERC-46
 
 ## 3. Summary Architecture Matrix
 
-| Surface | Route | Current Data Source | Soroban Read Dependency | Soroban Write Dependency | Vault / Client Function |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Landing** | `/` | Fixtures (`HB_DATA.pool`) | `total_assets`, `share_price`, `get_projects` | None | `fetchTotalAssets`, `useVault` |
-| **Connect** | `/connect` | Stellar Wallets Kit + Demo | Horizon / RPC Account Check | None | `WalletProvider` (`connect`, `sign`) |
-| **Explore** | `/explore` | Fixtures / REST API | `list_projects`, oracle scores | None | `getProjects()` |
-| **Project Detail** | `/project/[id]` | Fixtures / REST API | `get_project`, `get_score_history`, milestone draws | None | `getProject(id)` |
-| **Deposit** | `/deposit` | Live Soroban / Mock fallback | `share_price`, `total_assets`, `convert_to_shares` | `deposit(amount, min_shares)` | `fetchSharePrice`, `submitDeposit`, `previewDeposit` |
-| **Portfolio** | `/portfolio` | Fixtures (`HB_DATA.you`) | `balance`, `convert_to_assets`, `get_liquid_assets` | None | `vault.convertToAssets`, `useVault` |
-| **Withdraw** | `/withdraw` | Live Soroban / Mock fallback | `share_price`, `convert_to_assets`, `max_withdraw` | `withdraw(shares, min_assets)` | `vault.convertToAssets`, `submitWithdraw`, `previewWithdraw` |
-| **Creator** | `/creator` | Fixtures (`data/creator.ts`) | `get_status`, `get_creator_projects`, oracle scores | *Future:* `apply_whitelist`, `create_project` | Future `CreatorClient` |
-| **Admin / Oracle** | `/admin` | Fixtures + In-Memory State | Vault stats, registry entries, creator whitelist | *Future:* `push_scores`, `fund_project`, whitelist updates | Future `OracleClient` / `AdminClient` |
+| Surface            | Route           | Current Data Source          | Soroban Read Dependency                             | Soroban Write Dependency                                   | Vault / Client Function                                      |
+| :----------------- | :-------------- | :--------------------------- | :-------------------------------------------------- | :--------------------------------------------------------- | :----------------------------------------------------------- |
+| **Landing**        | `/`             | Fixtures (`HB_DATA.pool`)    | `total_assets`, `share_price`, `get_projects`       | None                                                       | `fetchTotalAssets`, `useVault`                               |
+| **Connect**        | `/connect`      | Stellar Wallets Kit + Demo   | Horizon / RPC Account Check                         | None                                                       | `WalletProvider` (`connect`, `sign`)                         |
+| **Explore**        | `/explore`      | Fixtures / REST API          | `list_projects`, oracle scores                      | None                                                       | `getProjects()`                                              |
+| **Project Detail** | `/project/[id]` | Fixtures / REST API          | `get_project`, `get_score_history`, milestone draws | None                                                       | `getProject(id)`                                             |
+| **Deposit**        | `/deposit`      | Live Soroban / Mock fallback | `share_price`, `total_assets`, `convert_to_shares`  | `deposit(amount, min_shares)`                              | `fetchSharePrice`, `submitDeposit`, `previewDeposit`         |
+| **Portfolio**      | `/portfolio`    | Fixtures (`HB_DATA.you`)     | `balance`, `convert_to_assets`, `get_liquid_assets` | None                                                       | `vault.convertToAssets`, `useVault`                          |
+| **Withdraw**       | `/withdraw`     | Live Soroban / Mock fallback | `share_price`, `convert_to_assets`, `max_withdraw`  | `withdraw(shares, min_assets)`                             | `vault.convertToAssets`, `submitWithdraw`, `previewWithdraw` |
+| **Creator**        | `/creator`      | Fixtures (`data/creator.ts`) | `get_status`, `get_creator_projects`, oracle scores | _Future:_ `apply_whitelist`, `create_project`              | Future `CreatorClient`                                       |
+| **Admin / Oracle** | `/admin`        | Fixtures + In-Memory State   | Vault stats, registry entries, creator whitelist    | _Future:_ `push_scores`, `fund_project`, whitelist updates | Future `OracleClient` / `AdminClient`                        |
 
 ---
 
