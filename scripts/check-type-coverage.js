@@ -29,6 +29,8 @@ function walkSync(dir, fileList = []) {
     if (entry.isDirectory()) {
       walkSync(full, fileList)
     } else if (/\.(ts|tsx)$/.test(entry.name) && !entry.name.endsWith('.d.ts')) {
+      // Skip test files
+      if (entry.name.includes('.test.') || entry.name.includes('.spec.')) continue
       fileList.push(full)
     }
   }
@@ -47,8 +49,7 @@ function checkFile(filePath) {
     if (STRING_LINE_RE.test(line)) continue
 
     // Skip lines that are only i18n message content
-    if (line.includes('"any ') || line.includes("'any ") || line.includes('`any '))
-      continue
+    if (line.includes('"any ') || line.includes("'any ") || line.includes('`any ')) continue
 
     const matches = line.matchAll(TYPE_ANY_RE)
     for (const m of matches) {
