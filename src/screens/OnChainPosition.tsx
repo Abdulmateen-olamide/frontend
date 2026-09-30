@@ -4,6 +4,7 @@ import { TransactionPendingError } from '../wallet/transactions'
 
 import { useEffect, useState, type CSSProperties } from 'react'
 import { Button, Card, StatBlock, useToast } from '../components'
+import { getExplorerTxUrl } from '../config/network'
 import { formatDecimal } from '../lib/format'
 import { useVaultRefresh } from '../wallet/useVaultRefresh'
 import { useWallet } from '../wallet/WalletProvider'
@@ -22,7 +23,7 @@ export function OnChainPosition() {
   const [claiming, setClaiming] = useState(false)
   const enabled = Boolean(process.env.NEXT_PUBLIC_VAULT_CONTRACT_ID) && !isDemo && !!address
 
-  const { tick: reloads } = useVaultRefresh(enabled)
+  const { tick: reloads, refresh: refreshBalances } = useVaultRefresh(enabled)
 
   useEffect(() => {
     if (!enabled || !address || document.hidden) return
@@ -49,20 +50,60 @@ export function OnChainPosition() {
     if (!address) return
     setClaiming(true)
     try {
-      await submitClaimYield(address, sign)
+      const hash = await submitClaimYield(address, sign)
+      // Displayed value drops to 0 immediately upon success (#590)
+      setPortfolio((prev) => (prev ? { ...prev, claimableYield: 0 } : null))
+      const explorerUrl = getExplorerTxUrl(hash)
       toast({
         tone: 'success',
         title: 'Yield claimed',
         message: 'Your yield was paid out in USDC.',
+        href: explorerUrl,
+        action: (
+          <a
+            href={explorerUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: 'var(--type-small)',
+              color: 'var(--solar)',
+              textDecoration: 'underline',
+            }}
+          >
+            View on explorer
+          </a>
+        ),
       })
+      // Refresh balances after confirmation (#590)
+      refreshBalances()
     } catch (e) {
+      const isPending = e instanceof TransactionPendingError
+      const errorMessage = e instanceof Error ? e.message : 'Could not claim yield right now.'
       toast({
-        tone: e instanceof TransactionPendingError ? 'solar' : 'error',
-        title:
-          e instanceof TransactionPendingError
-            ? 'Still pending — we’ll keep checking'
-            : 'Claim failed',
-        message: e instanceof Error ? e.message : 'Could not claim yield right now.',
+        tone: isPending ? 'solar' : 'error',
+        title: isPending ? 'Still pending — we’ll keep checking' : 'Claim failed',
+        message: errorMessage,
+        action: isPending ? undefined : (
+          <button
+            type="button"
+            onClick={() => void handleClaimYield()}
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: 'var(--type-small)',
+              fontWeight: 600,
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-pill)',
+              border: 'none',
+              background: 'var(--ember)',
+              color: 'var(--surface)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Retry
+          </button>
+        ),
       })
     } finally {
       setClaiming(false)
@@ -91,14 +132,16 @@ export function OnChainPosition() {
               size="md"
             />
           </div>
-          <Button
-            variant="primary"
-            loading={claiming}
-            disabled={portfolio.claimableYield <= 0 || claiming}
-            onClick={() => void handleClaimYield()}
-          >
-            Claim yield
-          </Button>
+          {portfolio.claimableYield > 0 && (
+            <Button
+              variant="primary"
+              loading={claiming}
+              disabled={claiming}
+              onClick={() => void handleClaimYield()}
+            >
+              Claim yield
+            </Button>
+          )}
         </div>
       )}
     </Card>

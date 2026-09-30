@@ -17,6 +17,8 @@ interface WalletContextValue {
   address: string | null
   connected: boolean
   connecting: boolean
+  /** True when the wallet is initializing, connecting, or syncing with the Stellar network (#473). */
+  syncing: boolean
   isDemo: boolean
   restoring: boolean
   connectionError: string | null
@@ -25,7 +27,10 @@ interface WalletContextValue {
   connectDemo: () => void
   disconnect: () => void
   retry: () => Promise<void>
-  sign: (xdr: string) => Promise<string>
+  /** Sign a transaction XDR. `passphrase` overrides the app network (SEP-10 challenges). */
+  sign: (xdr: string, passphrase?: string) => Promise<string>
+  /** Sign an arbitrary message (SEP-53 / SEP-43 signMessage) for wallet sign-in (#603). */
+  signMessage: (message: string) => Promise<string>
   network: 'PUBLIC' | 'TESTNET'
   setNetwork: (network: 'PUBLIC' | 'TESTNET') => void
   /** Passphrase the connected wallet reports, or null if unknown / not connected. */
@@ -56,9 +61,10 @@ const MAX_AUTO_RETRIES = 2
 
 const getInitialNetwork = (): 'PUBLIC' | 'TESTNET' => STELLAR_NETWORK_UPPERCASE
 
-export function WalletProvider({ children }: {children: ReactNode}) {
+export function WalletProvider({ children }: { children: ReactNode }) {
   const [address, setAddress] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const [isDemo, setIsDemo] = useState(false)
   const [restoring, setRestoring] = useState(true)
   const [connectionError, setConnectionError] = useState<string | null>(null)
@@ -105,7 +111,10 @@ export function WalletProvider({ children }: {children: ReactNode}) {
     const modules = defaultModules()
     // e2e builds only: a keypair-backed module so Playwright can sign without
     // a browser extension (#607). Never enabled on mainnet.
-    if (process.env.NEXT_PUBLIC_E2E_TEST_WALLET === 'true' && STELLAR_NETWORK_UPPERCASE !== 'PUBLIC') {
+    if (
+      process.env.NEXT_PUBLIC_E2E_TEST_WALLET === 'true' &&
+      STELLAR_NETWORK_UPPERCASE !== 'PUBLIC'
+    ) {
       const { E2ETestWalletModule } = await import('./e2eTestWallet')
       modules.unshift(new E2ETestWalletModule())
     }
@@ -134,8 +143,13 @@ export function WalletProvider({ children }: {children: ReactNode}) {
 
   const checkWalletNetwork = useCallback(async (): Promise<boolean> => {
     if (isDemo || !address) return true
-    const walletPassphrase = await readWalletNetwork()
-    return !isNetworkMismatch(walletPassphrase, appPassphrase)
+    setSyncing(true)
+    try {
+      const walletPassphrase = await readWalletNetwork()
+      return !isNetworkMismatch(walletPassphrase, appPassphrase)
+    } finally {
+      setSyncing(false)
+    }
   }, [isDemo, address, readWalletNetwork, appPassphrase])
 
   useEffect(() => {
@@ -158,59 +172,67 @@ export function WalletProvider({ children }: {children: ReactNode}) {
     if (savedWallet && savedWallet !== 'demo') {
       void (async () => {
         try {
+          setSyncing(true)
           await ensureInit()
           const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
           StellarWalletsKit.setWallet(savedWallet)
           await readWalletNetwork()
         } catch {
           /* the wallet may be uninstalled now — the address still shows */
+        } finally {
+          setSyncing(false)
         }
       })()
     }
   }, [ensureInit, readWalletNetwork])
 
-  const connectWithRetry = useCallback(async (attempt = 0): Promise<void> => {
-    setConnecting(true)
-    setConnectionError(null)
-    try {
-      await ensureInit()
-      const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('timeout')), CONNECT_TIMEOUT_MS)
-      )
-      const authPromise = StellarWalletsKit.authModal() as Promise<{ address: string }>
-      const { address: addr } = await Promise.race([authPromise, timeoutPromise])
-      let walletId = 'wallet'
+  const connectWithRetry = useCallback(
+    async (attempt = 0): Promise<void> => {
+      setConnecting(true)
+      setSyncing(true)
+      setConnectionError(null)
       try {
-        walletId = StellarWalletsKit.selectedModule?.productId ?? 'wallet'
-      } catch {
-        /* fallback */
+        await ensureInit()
+        const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), CONNECT_TIMEOUT_MS),
+        )
+        const authPromise = StellarWalletsKit.authModal() as Promise<{ address: string }>
+        const { address: addr } = await Promise.race([authPromise, timeoutPromise])
+        let walletId = 'wallet'
+        try {
+          walletId = StellarWalletsKit.selectedModule?.productId ?? 'wallet'
+        } catch {
+          /* fallback */
+        }
+        setAddress(addr)
+        setIsDemo(false)
+        setRetryCount(0)
+        persist(addr, walletId)
+        await readWalletNetwork()
+      } catch (e) {
+        const isTimeout = e instanceof Error && e.message === 'timeout'
+        const isCancelled = e instanceof Error && /dismiss|cancel|closed/i.test(e.message)
+        if (isCancelled) {
+          return
+        }
+        if (isTimeout && attempt < MAX_AUTO_RETRIES) {
+          setRetryCount(attempt + 1)
+          await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)))
+          return connectWithRetry(attempt + 1)
+        }
+        setConnectionError(
+          isTimeout
+            ? 'Connection timed out — please check your network and try again.'
+            : 'Could not connect to wallet — please try again.',
+        )
+      } finally {
+        setConnecting(false)
+        setSyncing(false)
       }
-      setAddress(addr)
-      setIsDemo(false)
-      setRetryCount(0)
-      persist(addr, walletId)
-      await readWalletNetwork()
-    } catch (e) {
-      const isTimeout = e instanceof Error && e.message === 'timeout'
-      const isCancelled = e instanceof Error && /dismiss|cancel|closed/i.test(e.message)
-      if (isCancelled) {
-        return
-      }
-      if (isTimeout && attempt < MAX_AUTO_RETRIES) {
-        setRetryCount(attempt + 1)
-        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)))
-        return connectWithRetry(attempt + 1)
-      }
-      setConnectionError(
-        isTimeout
-          ? 'Connection timed out — please check your network and try again.'
-          : 'Could not connect to wallet — please try again.'
-      )
-    } finally {
-      setConnecting(false)
-    }
-  }, [ensureInit, persist, readWalletNetwork])
+    },
+    [ensureInit, persist, readWalletNetwork],
+  )
 
   const connect = useCallback(async () => {
     setRetryCount(0)
@@ -231,22 +253,45 @@ export function WalletProvider({ children }: {children: ReactNode}) {
   }, [persist])
 
   const sign = useCallback(
-    async (xdr: string): Promise<string> => {
+    async (xdr: string, passphrase?: string): Promise<string> => {
+      if (isDemo) throw new Error('demo')
+      setSyncing(true)
+      try {
+        await ensureInit()
+        const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
+        // A sign-in challenge may name its own network; only app transactions are
+        // guarded against a wallet/app network mismatch.
+        if (!passphrase) {
+          // Block before the wallet prompt: a mismatched network can only fail (#611).
+          const walletPassphrase = await readWalletNetwork()
+          if (isNetworkMismatch(walletPassphrase, appPassphrase)) {
+            throw new NetworkMismatchError(walletPassphrase!, appPassphrase)
+          }
+        }
+        const result = await StellarWalletsKit.signTransaction(xdr, {
+          networkPassphrase: passphrase ?? appPassphrase,
+          address: address ?? undefined,
+        })
+        return result.signedTxXdr
+      } finally {
+        setSyncing(false)
+      }
+    },
+    [isDemo, ensureInit, address, appPassphrase, readWalletNetwork],
+  )
+
+  const signMessage = useCallback(
+    async (message: string): Promise<string> => {
       if (isDemo) throw new Error('demo')
       await ensureInit()
       const { StellarWalletsKit } = await import('@creit.tech/stellar-wallets-kit')
-      // Block before the wallet prompt: a mismatched network can only fail (#611).
-      const walletPassphrase = await readWalletNetwork()
-      if (isNetworkMismatch(walletPassphrase, appPassphrase)) {
-        throw new NetworkMismatchError(walletPassphrase!, appPassphrase)
-      }
-      const result = await StellarWalletsKit.signTransaction(xdr, {
+      const result = await StellarWalletsKit.signMessage(message, {
         networkPassphrase: appPassphrase,
         address: address ?? undefined,
       })
-      return result.signedTxXdr
+      return result.signedMessage
     },
-    [isDemo, ensureInit, address, appPassphrase, readWalletNetwork],
+    [isDemo, ensureInit, address, appPassphrase],
   )
 
   const disconnect = useCallback(() => {
@@ -272,6 +317,7 @@ export function WalletProvider({ children }: {children: ReactNode}) {
         address,
         connected: address !== null,
         connecting,
+        syncing,
         isDemo,
         restoring,
         connectionError,
@@ -281,6 +327,7 @@ export function WalletProvider({ children }: {children: ReactNode}) {
         disconnect,
         retry,
         sign,
+        signMessage,
         network,
         setNetwork,
         walletNetworkPassphrase,

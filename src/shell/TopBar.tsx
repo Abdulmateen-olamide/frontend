@@ -43,6 +43,8 @@ export function TopBar() {
     connected,
     address,
     connecting,
+    syncing,
+    restoring,
     isDemo,
     networkMismatch,
     walletNetworkPassphrase,
@@ -291,12 +293,16 @@ export function TopBar() {
           )}
 
           {connected && address ? (
-            <WalletMenu address={address} isDemo={isDemo} />
+            <WalletMenu
+              address={address}
+              isDemo={isDemo}
+              syncing={syncing || restoring || connecting}
+            />
           ) : (
             <Button
               variant="primary"
               size="md"
-              loading={connecting && networkOnline}
+              loading={(connecting || syncing || restoring) && networkOnline}
               onClick={() => router.push('/connect')}
             >
               {t('connect')}
@@ -579,7 +585,15 @@ function SunIcon() {
 }
 
 /** The connected wallet pill + its account menu (incl. Disconnect / sign out). */
-function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
+function WalletMenu({
+  address,
+  isDemo,
+  syncing = false,
+}: {
+  address: string
+  isDemo: boolean
+  syncing?: boolean
+}) {
   const t = useTranslations('Nav')
   const { toast } = useToast()
   const router = useRouter()
@@ -751,7 +765,27 @@ function WalletMenu({ address, isDemo }: { address: string; isDemo: boolean }) {
         <span style={{ fontFamily: 'var(--font-data)', fontSize: 13, color: 'var(--ink)' }}>
           {shortAddress(address)}
         </span>
-        <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--solar)' }} />
+        {syncing ? (
+          <span
+            role="status"
+            aria-label="Syncing with Stellar"
+            title="Syncing with Stellar…"
+            style={{
+              width: 16,
+              height: 16,
+              border: '2px solid var(--ink-20, rgba(0,0,0,0.2))',
+              borderTopColor: 'var(--solar)',
+              borderRadius: '50%',
+              animation: 'hb-spin 0.8s linear infinite',
+              display: 'inline-block',
+              marginInline: 6,
+            }}
+          />
+        ) : (
+          <span
+            style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--solar)' }}
+          />
+        )}
       </button>
 
       {open && (
