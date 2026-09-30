@@ -567,7 +567,7 @@ async function waitForTransaction(hash: string): Promise<TransactionConfirmation
     if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
       const contractErr = extractContractError(result)
       throw new TransactionFailedError(
-        `Transaction failed on-chain${contractErr ? `: ${contractErr}` : ''}`
+        `Transaction failed on-chain${contractErr ? `: ${contractErr}` : ''}`,
       )
     }
     // NOT_FOUND means still pending, keep polling
@@ -596,14 +596,14 @@ async function invokeSigned(
   const contract = new Contract(CONTRACT_ID!)
 
   const [account, baseFee] = await Promise.all([
-    withTimeout(
-      horizon.loadAccount(address),
-      'Stellar Horizon timed out loading account',
-    ),
-    horizon.fetchBaseFee().catch(() => 100)
+    withTimeout(horizon.loadAccount(address), 'Stellar Horizon timed out loading account'),
+    horizon.fetchBaseFee().catch(() => 100),
   ])
 
-  const tx = new TransactionBuilder(account, { fee: baseFee.toString(), networkPassphrase: NETWORK_PASSPHRASE })
+  const tx = new TransactionBuilder(account, {
+    fee: baseFee.toString(),
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
     .addOperation(contract.call(method, ...args))
     .setTimeout(180)
     .build()
@@ -656,9 +656,11 @@ async function invokeSigned(
 
     if (sendResult.status === 'ERROR') {
       const contractErr = extractContractError(sendResult)
-      const msg = contractErr 
-        ? contractErr 
-        : JSON.stringify(sendResult.errorResult ?? 'unknown', (_, v) => (typeof v === 'bigint' ? v.toString() : v))
+      const msg = contractErr
+        ? contractErr
+        : JSON.stringify(sendResult.errorResult ?? 'unknown', (_, v) =>
+            typeof v === 'bigint' ? v.toString() : v,
+          )
       throw new TransactionFailedError(`Send failed: ${msg}`)
     }
 
@@ -704,11 +706,8 @@ export async function estimateTransactionFee(
     const contract = new Contract(CONTRACT_ID)
 
     const [account, baseFee] = await Promise.all([
-      withTimeout(
-        horizon.loadAccount(address),
-        'Stellar Horizon timed out loading account',
-      ),
-      horizon.fetchBaseFee().catch(() => 100)
+      withTimeout(horizon.loadAccount(address), 'Stellar Horizon timed out loading account'),
+      horizon.fetchBaseFee().catch(() => 100),
     ])
 
     let args: XdrTypes.ScVal[] = []

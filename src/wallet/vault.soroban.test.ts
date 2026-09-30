@@ -399,8 +399,11 @@ describe('signed transactions', () => {
     rpcMock.sendTransaction
       .mockResolvedValueOnce({ status: 'TRY_AGAIN_LATER' })
       .mockResolvedValueOnce({ status: 'TRY_AGAIN_LATER' })
-      .mockImplementation(async (tx: Transaction) => ({ status: 'PENDING', hash: tx.hash().toString('hex') }))
-    
+      .mockImplementation(async (tx: Transaction) => ({
+        status: 'PENDING',
+        hash: tx.hash().toString('hex'),
+      }))
+
     await settle(vault.submitWithdraw(100, USER, sign))
     expect(rpcMock.sendTransaction).toHaveBeenCalledTimes(3)
   })
