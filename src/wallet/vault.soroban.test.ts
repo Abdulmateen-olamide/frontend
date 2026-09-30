@@ -495,4 +495,44 @@ describe('view calls', () => {
     rpcMock.simulateTransaction.mockResolvedValue({ error: 'nope' })
     await expect(vault.fetchUtilizationBps(USER)).resolves.toBe(0)
   })
+
+  describe('fetchVaultLimits', () => {
+    it('fetches and scales vault limits from the contract', async () => {
+      const vault = await loadVault()
+      rpcMock.simulateTransaction.mockImplementation((tx: any) => {
+        const op = tx.operations[0]
+        const call = op.func.invokeContract()
+        const method = call.functionName().toString()
+        if (method === 'is_paused') return Promise.resolve(okSimulation(xdr.ScVal.scvBool(true)))
+        if (method === 'get_deposit_lock_expiry') return Promise.resolve(okSimulation(nativeToScVal(1234567890n, { type: 'u64' })))
+        if (method === 'max_transaction_amount') return Promise.resolve(okSimulation(nativeToScVal(1000_0000000n, { type: 'i128' })))
+        if (method === 'get_utilization_bps') return Promise.resolve(okSimulation(nativeToScVal(500n, { type: 'u32' })))
+        return Promise.resolve(okSimulation())
+      })
+
+      const limits = await vault.fetchVaultLimits(USER)
+      expect(limits.paused).toBe(true)
+      expect(limits.lockExpiresAt).toBe(1234567890)
+      expect(limits.maxTx).toBe(1000)
+      expect(limits.utilizationBps).toBe(500)
+      expect(limits.minDeposit).toBe(100)
+      expect(limits.minWithdrawShares).toBe(100)
+    })
+
+    it('falls back to defaults if offline or contract missing', async () => {
+      const vault = await loadVault(null)
+      const limits = await vault.fetchVaultLimits(USER)
+      expect(limits.paused).toBe(false)
+      expect(limits.maxTx).toBe(482)
+      expect(limits.minDeposit).toBe(100)
+    })
+
+    it('falls back to defaults if RPC errors', async () => {
+      const vault = await loadVault()
+      rpcMock.simulateTransaction.mockRejectedValue(new Error('RPC error'))
+      const limits = await vault.fetchVaultLimits(USER)
+      expect(limits.paused).toBe(false)
+      expect(limits.maxTx).toBe(482)
+    })
+  })
 })

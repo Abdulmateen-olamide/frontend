@@ -6,6 +6,7 @@ import { Button, AmountInput, useToast } from '../components'
 import { Helio } from '../brand/Helio'
 import { submitDeposit } from '../wallet/vault'
 import { useVault } from '../wallet/useVault'
+import { useVaultLimits } from '../wallet/useVaultLimits'
 import { TransactionPendingError } from '../wallet/transactions'
 import { useTransactionFee } from '../wallet/useTransactionFee'
 import { scrollToFirstError } from '../lib/scrollToError'
@@ -20,7 +21,6 @@ import { projectedReturn } from '../lib/bondUtils'
 import { useDepositGuard } from '../hooks/useDepositGuard'
 import { RecurringInvestmentOptions } from '../components/RecurringInvestmentOptions'
 
-const MIN_DEPOSIT_USDC = 1
 const USER_BALANCE_USDC = 240
 const DEFAULT_DEPOSIT_USDC = '100'
 const QUICK_DEPOSIT_AMOUNTS_USDC = [25, 50, 100]
@@ -54,6 +54,7 @@ export function Deposit({ onDone }: DepositProps) {
     fetchedAt,
     refresh: refreshVault,
   } = useVault()
+  const { minDeposit, paused, maxTx } = useVaultLimits()
   const [step, setStep] = useState<DepositStep>('amount')
   const [amount, setAmount] = useState(DEFAULT_DEPOSIT_USDC)
   const [investmentId, setInvestmentId] = useState<string | null>(null)
@@ -268,7 +269,7 @@ export function Deposit({ onDone }: DepositProps) {
                       Network fee: {feeLabel} · Deposit: {formatDecimal(n, 2)} USDC worth{' '}
                       {formatDecimal(n / price, 4)} HBS (real-time)
                     </span>
-                    {n >= MIN_DEPOSIT_USDC && (
+                    {n >= minDeposit && (
                       <div
                         style={{
                           display: 'flex',
@@ -316,20 +317,20 @@ export function Deposit({ onDone }: DepositProps) {
               variant="primary"
               size="lg"
               style={{ width: '100%', marginTop: 20 }}
-              disabled={n < MIN_DEPOSIT_USDC || n > balance}
+              disabled={n < minDeposit || n > balance || n > maxTx || paused}
               reason={
-                n > balance ? t('reasonExceeds') : n < MIN_DEPOSIT_USDC ? t('reasonMin') : undefined
+                paused ? 'Vault paused' : n > balance ? t('reasonExceeds') : n > maxTx ? 'Amount exceeds pool limit' : n < minDeposit ? `Minimum deposit is ${minDeposit} USDC` : undefined
               }
               onClick={() => {
-                if (n < MIN_DEPOSIT_USDC || n > balance) {
-                  setTxError(n > balance ? 'amount_exceeds_balance' : 'amount_too_low')
+                if (n < minDeposit || n > balance || n > maxTx || paused) {
+                  setTxError(paused ? 'vault_paused' : n > balance ? 'amount_exceeds_balance' : n > maxTx ? 'amount_exceeds_max_tx' : 'amount_too_low')
                   setTimeout(() => scrollToFirstError(document), 50)
                   return
                 }
                 changeStep('review')
               }}
             >
-              {n >= MIN_DEPOSIT_USDC && n <= balance
+              {n >= minDeposit && n <= balance && n <= maxTx && !paused
                 ? t('investCta', { amount: n })
                 : t('investCtaEmpty')}
             </Button>
