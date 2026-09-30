@@ -73,8 +73,9 @@ function invocation(tx: Transaction) {
   }
 }
 
-function simulatedTx(n = 0): Transaction {
-  return rpcMock.simulateTransaction.mock.calls[n][0] as Transaction
+function simulatedTx(n?: number): Transaction {
+  const calls = rpcMock.simulateTransaction.mock.calls
+  return calls[n ?? calls.length - 1][0] as Transaction
 }
 
 function okSimulation(retval: xdr.ScVal = xdr.ScVal.scvVoid()) {
@@ -104,7 +105,22 @@ beforeEach(() => {
     clear: () => storage.clear(),
   })
   vi.useFakeTimers()
-  rpcMock.simulateTransaction.mockReset().mockResolvedValue(okSimulation())
+  rpcMock.simulateTransaction.mockReset().mockImplementation((tx: any) => {
+    const op = tx?.operations?.[0]
+    if (op && op.type === 'invokeHostFunction') {
+      const call = op.func.invokeContract()
+      const method = call.functionName().toString()
+      if (method === 'convert_to_assets') return Promise.resolve(okSimulation(nativeToScVal(10_058_000n, { type: 'i128' })))
+      if (method === 'get_portfolio') {
+        const i128 = (v: bigint) => nativeToScVal(v, { type: 'i128' })
+        return Promise.resolve(okSimulation(xdr.ScVal.scvMap([
+          new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('shares'), val: i128(100000_000_000n) }),
+          new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('usdc_value'), val: i128(100000_000_000n) })
+        ])))
+      }
+    }
+    return Promise.resolve(okSimulation())
+  })
   rpcMock.sendTransaction.mockReset().mockImplementation(async (tx: Transaction) => ({
     status: 'PENDING',
     hash: tx.hash().toString('hex'),
@@ -232,6 +248,16 @@ describe('signed transactions', () => {
     // Min return = 15.75 * 0.995 = 15.67125 USDC.
     const call = invocation(simulatedTx(2))
     expect(call).toEqual({
+      contract: CONTRACT_ID,
+      method: 'withdraw',
+      argTypes: ['scvI128', 'scvI128'],
+      args: [
+        150_000_000n,
+        BigInt(Math.floor(15.75 * 0.995 * 1e7)),
+      ],
+    })
+  })
+
   it('withdraw(shares_amount: i128, min_usdc_return: i128) reports the returned USDC amount', async () => {
     const vault = await loadVault()
     rpcMock.getTransaction.mockResolvedValue({
@@ -248,8 +274,8 @@ describe('signed transactions', () => {
       method: 'withdraw',
       argTypes: ['scvI128', 'scvI128'],
       args: [
-        150_000_000n,
-        BigInt(Math.floor(15.75 * 0.995 * 1e7)),
+        BigInt(Math.round((200 / vault.SHARE_PRICE) * 1e7)),
+        BigInt(Math.floor(200 * 0.995 * 1e7)),
       ],
     })
   })

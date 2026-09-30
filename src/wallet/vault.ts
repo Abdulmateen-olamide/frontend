@@ -399,6 +399,7 @@ export interface OnChainPortfolio {
  */
 export async function fetchPortfolio(account: string): Promise<OnChainPortfolio> {
   if (!CONTRACT_ID) throw new Error('NEXT_PUBLIC_VAULT_CONTRACT_ID not set')
+  if (offline) throw new Error('Stellar node is offline')
   const { Address, scValToNative } = await import('@stellar/stellar-sdk')
   const retval = await sorobanSimulate(account, 'get_portfolio', [new Address(account).toScVal()])
   const raw = scValToNative(retval) as Record<string, bigint | number>
@@ -818,16 +819,10 @@ export async function submitWithdraw(
 
   const { nativeToScVal, xdr, scValToNative } = await import('@stellar/stellar-sdk')
 
-  let priceStr: string
-  let portfolio: OnChainPortfolio
-  try {
-    [priceStr, portfolio] = await Promise.all([
-      fetchSharePrice(address),
-      fetchPortfolio(address),
-    ])
-  } catch (e) {
-    throw new Error('No live share price available')
-  }
+  const [priceStr, portfolio] = await Promise.all([
+    fetchSharePrice(address),
+    fetchPortfolio(address),
+  ])
 
   const livePrice = Number(priceStr)
   if (!livePrice || isNaN(livePrice)) {
