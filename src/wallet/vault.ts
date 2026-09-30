@@ -376,6 +376,8 @@ export async function fetchVaultLimits(
         utilVal !== undefined ? Number(scValToNative(utilVal)) : defaults.utilizationBps,
     }
   } catch {
+    // An unreachable node or a missing contract must not break the screen;
+    // the documented defaults are safe to render.
     return defaults
   }
 }
