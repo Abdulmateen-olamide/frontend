@@ -409,7 +409,9 @@
     "priceHistory": "سجل الأسعار",
     "priceLabel": "السعر",
     "yieldHistory": "سجل العائد",
-    "yieldLabel": "العائد"
+    "yieldLabel": "العائد",
+    "yieldHelpLabel": "حول عائد السند",
+    "yieldHelp": "هذا هو العائد الإرشادي الحالي للسند. اضغط لمعرفة المزيد؛ فهو ليس عائداً مضموناً."
   },
   "PriceHistory": {
     "title": "تسعير السند",

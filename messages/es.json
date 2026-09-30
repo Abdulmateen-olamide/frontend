@@ -402,7 +402,9 @@
     "priceHistory": "Historial del precio",
     "priceLabel": "Precio",
     "yieldHistory": "Historial del rendimiento",
-    "yieldLabel": "Rendimiento"
+    "yieldLabel": "Rendimiento",
+    "yieldHelpLabel": "Acerca del rendimiento del bono",
+    "yieldHelp": "Este es el rendimiento indicativo actual del bono. Toca para obtener más información; no es un rendimiento garantizado."
   },
   "PriceHistory": {
     "title": "Precio del bono",

@@ -10,6 +10,7 @@ import {
   ShieldCheckIcon,
   WatchlistButton,
   YieldAlertButton,
+  InfoTooltip,
 } from '../components'
 import { Sparkline as SparklineUnmemoized } from '../components/Sparkline'
 const Sparkline = memo(SparklineUnmemoized)
@@ -351,6 +352,7 @@ export const ProjectDetail = memo(function ProjectDetail({
               >
                 {t('yieldLabel')}
               </span>
+              <InfoTooltip label={t('yieldHelpLabel')} content={t('yieldHelp')} />
             </div>
           </div>
         </div>
