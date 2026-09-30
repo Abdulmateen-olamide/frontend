@@ -286,6 +286,20 @@ describe('signed transactions', () => {
     expect(String(result)).toBe(simulatedTx().hash().toString('hex'))
   })
 
+  it('detects a queued withdrawal when the RPC response omits events', async () => {
+    const vault = await loadVault()
+    rpcMock.getTransaction.mockResolvedValue({
+      status: 'SUCCESS',
+      returnValue: nativeToScVal(0n, { type: 'i128' }),
+    })
+
+    const result = await settle(vault.submitWithdraw(500, USER, sign))
+
+    expect(result.queued).toBe(true)
+    expect(result.estimatedAmount).toBeUndefined()
+    expect(result).not.toHaveProperty('position')
+  })
+
   it('does not ask the wallet to sign when simulation fails', async () => {
     const vault = await loadVault()
     rpcMock.simulateTransaction.mockResolvedValue({ error: 'HostError: Error(Contract, #12)' })
