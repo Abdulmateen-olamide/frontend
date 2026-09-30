@@ -1,17 +1,11 @@
-import { Metadata } from 'next'
+import type { Metadata } from 'next'
 import { getProjectsPaginated } from '../../lib/api'
+import { routeMetadata } from '../../lib/routeMetadata.server'
 import { ExploreClient } from './ExploreClient'
 
-export const metadata: Metadata = {
-  title: 'Explore Green Energy Bonds | Heliobond',
-  description:
-    'Browse verified solar, wind, and hydro green energy projects on Stellar. Filter by asset type and evaluate credit & environmental impact scores.',
-  openGraph: {
-    title: 'Explore Green Energy Bonds | Heliobond',
-    description:
-      'Browse verified solar, wind, and hydro green energy projects on Stellar. Filter by asset type and evaluate credit & environmental impact scores.',
-    type: 'website',
-  },
+/** Indexable public content route (#657). */
+export async function generateMetadata(): Promise<Metadata> {
+  return routeMetadata('/explore')
 }
 
 export default async function ExplorePage() {

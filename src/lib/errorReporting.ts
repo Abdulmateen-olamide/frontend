@@ -1,8 +1,12 @@
 // Client error reporting and web-vitals sink (#609). Dependency-free: events are
 // posted as JSON to NEXT_PUBLIC_ERROR_REPORT_URL (an OpenTelemetry/Sentry-relay or
-// any collector) and mirrored to the page's analytics client. Nothing is sent when
-// the visitor sends Do-Not-Track / Global Privacy Control or has declined consent.
-// Payloads never contain wallet addresses, hashes, emails or XDR — see scrub().
+// any collector) and mirrored to the page's analytics client.
+//
+// Telemetry is opt-in (#658): nothing is sent until the visitor records a choice
+// with setTelemetryConsent('granted') through the consent banner, and a recorded
+// 'denied' — or Do-Not-Track / Global Privacy Control — always wins.
+// Payloads never contain wallet addresses, hashes, emails or XDR — see scrub(),
+// which also runs over every string in the caller-supplied `context`.
 
 import { track } from './analytics'
 import { parseContractError, type ContractErrorContext } from './contractErrors'
@@ -22,7 +26,7 @@ export interface ErrorReport {
   /** Numeric Soroban contract error code, when the failure carried one. */
   contractErrorCode?: number
   contractErrorName?: string
-  /** Free-form, already-scrubbed context such as the operation name. */
+  /** Free-form context such as the operation name. String values are scrubbed. */
   context?: Record<string, string | number | boolean>
   path?: string
   release?: string
@@ -59,7 +63,8 @@ export function scrub(text: string, max = MAX_MESSAGE): string {
   return out.length > max ? `${out.slice(0, max)}…` : out
 }
 
-function readConsent(): TelemetryConsent | null {
+/** The visitor's recorded choice, or `null` when they haven't chosen yet. */
+export function readTelemetryConsent(): TelemetryConsent | null {
   try {
     const value = localStorage.getItem(TELEMETRY_CONSENT_KEY)
     return value === 'granted' || value === 'denied' ? value : null
@@ -68,23 +73,50 @@ function readConsent(): TelemetryConsent | null {
   }
 }
 
-/** Record the visitor's telemetry choice (wire this to a consent control). */
-export function setTelemetryConsent(consent: TelemetryConsent): void {
+/**
+ * Record the visitor's telemetry choice. Driven by the consent banner in
+ * `src/components/TelemetryConsent.tsx`; `null` clears the choice so the banner
+ * asks again on the next visit.
+ */
+export function setTelemetryConsent(consent: TelemetryConsent | null): void {
   try {
-    localStorage.setItem(TELEMETRY_CONSENT_KEY, consent)
+    if (consent === null) localStorage.removeItem(TELEMETRY_CONSENT_KEY)
+    else localStorage.setItem(TELEMETRY_CONSENT_KEY, consent)
   } catch {
     /* storage unavailable — the choice just won't persist */
   }
+  // Same-tab listeners (the consent banner) re-read the choice. Other open tabs
+  // get a real `storage` event from the browser, which they also listen for.
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(TELEMETRY_CONSENT_EVENT))
 }
 
-/** False when DNT/GPC is set or consent was declined. Off on the server. */
+/** Fired on `window` whenever the recorded choice changes, same tab or another. */
+export const TELEMETRY_CONSENT_EVENT = 'hb-telemetry-consent-change'
+
+/**
+ * False unless the visitor explicitly granted consent, and always false on the
+ * server or when the browser sends Do-Not-Track / Global Privacy Control. The
+ * default is opt-in (#658): no recorded choice means no telemetry.
+ */
 export function isTelemetryAllowed(): boolean {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') return false
   const nav = navigator as Navigator & { globalPrivacyControl?: boolean; msDoNotTrack?: string }
   const dnt = nav.doNotTrack ?? nav.msDoNotTrack ?? (window as { doNotTrack?: string }).doNotTrack
   if (dnt === '1' || dnt === 'yes') return false
   if (nav.globalPrivacyControl === true) return false
-  return readConsent() !== 'denied'
+  return readTelemetryConsent() === 'granted'
+}
+
+/** Redact every string in the caller-supplied context, as `message`/`stack` are. */
+function scrubContext(
+  context: Record<string, string | number | boolean> | undefined,
+): Record<string, string | number | boolean> | undefined {
+  if (!context) return undefined
+  const out: Record<string, string | number | boolean> = {}
+  for (const [key, value] of Object.entries(context)) {
+    out[key] = typeof value === 'string' ? scrub(value) : value
+  }
+  return out
 }
 
 function sinkUrl(): string | undefined {
@@ -141,7 +173,7 @@ export function reportError(error: unknown, options: ReportErrorOptions): void {
       stack: err.stack ? scrub(err.stack, MAX_STACK) : undefined,
       contractErrorCode: contract?.code,
       contractErrorName: contract?.name ?? undefined,
-      context: options.context,
+      context: scrubContext(options.context),
       ...base(),
     })
   } catch {

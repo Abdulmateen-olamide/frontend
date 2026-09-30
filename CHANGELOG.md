@@ -33,7 +33,14 @@ once it cuts its first tagged release (it currently ships continuously from
   wallet menu at `/watchlist`, and see which are open for funding (#407).
 - Preemptive session timeout warning on auth forms, so in-progress form data
   isn't silently lost (#352).
+- A route table in the README, and a "What runs where" section that separates
+  on-chain, env-var-dependent and fixture data, so new contributors can tell what
+  is real (#659).
 - Return projection on the investment form.
+- Telemetry consent banner on first visit, plus a privacy control in the footer to
+  change the choice later (#658).
+- Every route now has its own page title and meta description, so browser tabs,
+  history and screen-reader announcements identify the page you're on (#657).
 
 ### Changed
 
@@ -42,9 +49,18 @@ once it cuts its first tagged release (it currently ships continuously from
   Google CDNs via render-blocking CSS imports (#387).
 - Auth login now detects existing social accounts during email login to
   prevent duplicate accounts (#353).
+- Client telemetry (error reports and web-vitals) is now opt-in: nothing is sent
+  until you allow it from the consent banner, and the footer control lets you
+  change that choice (#658).
+- Wallet-private pages (`/portfolio`, `/deposit`, `/withdraw`, `/connect`,
+  `/watchlist`, `/portfolio/tax-reports`, `/admin`) are marked `noindex` and
+  disallowed in `robots.txt`; `/risk`, `/verify` and `/learn` are now in the
+  sitemap and the per-user `/watchlist` is out of it (#657).
 
 ### Fixed
 
+- Addresses, transaction hashes and emails passed in an error report's context are
+  now redacted before they are sent (#658).
 - Fixed transaction hashes wrapping awkwardly on mobile and made them easier to
   copy (#418).
 - Investment form leading zeros, a nav prop mismatch, and decimal rounding.

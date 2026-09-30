@@ -1,5 +1,7 @@
 'use client'
 
+import { TransactionPendingError } from '../wallet/transactions'
+
 import { memo, useState, useEffect, useCallback, type CSSProperties, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
@@ -60,8 +62,11 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
       })
     } catch (e) {
       toast({
-        tone: 'error',
-        title: 'Claim failed',
+        tone: e instanceof TransactionPendingError ? 'solar' : 'error',
+        title:
+          e instanceof TransactionPendingError
+            ? 'Still pending — we’ll keep checking'
+            : 'Claim failed',
         message: e instanceof Error ? e.message : 'Could not process claim at this time.',
       })
     } finally {
@@ -207,12 +212,7 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
             </p>
           </div>
           {pendingClaims.length > 0 && (
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={claiming}
-              onClick={handleClaim}
-            >
+            <Button variant="primary" size="sm" disabled={claiming} onClick={handleClaim}>
               {claiming ? 'Claiming...' : 'Claim available liquidity'}
             </Button>
           )}

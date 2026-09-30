@@ -42,11 +42,17 @@ when it is set; nothing is sent otherwise.
   the scrubbed message and stack, the Soroban contract error code, the operation
   name (deposit/withdraw), page path, release tag, and LCP/INP/CLS/FCP/TTFB.
 - **Never collected:** wallet addresses, transaction hashes, emails or XDR — these
-  are redacted from messages and stacks before sending (`scrub()` in
-  `src/lib/errorReporting.ts`) — and no cookies or persistent identifiers.
-- **Opt-out:** nothing is sent when the browser sends Do-Not-Track or Global
-  Privacy Control, or when the visitor's choice `hb-telemetry-consent` is
-  `denied` (`setTelemetryConsent()`).
+  are redacted from messages, stacks and caller-supplied `context` values before
+  sending (`scrub()` in `src/lib/errorReporting.ts`) — and no cookies or
+  persistent identifiers.
+- **Opt-in (#658):** telemetry is **off until the visitor agrees**. A first visit
+  shows a consent banner (`src/components/TelemetryConsent.tsx`); the choice is
+  stored as `hb-telemetry-consent` = `granted` | `denied` and can be changed at
+  any time from the privacy control in the footer. With no recorded choice —
+  including a visitor who never sees the banner — **nothing is sent**
+  (`isTelemetryAllowed()` requires `granted`).
+- **Browser signals override consent:** nothing is sent when the browser sends
+  Do-Not-Track or Global Privacy Control, even if consent was granted.
 - **Source maps:** build with `SOURCE_MAPS=true` to publish browser source maps
   so the sink can symbolicate stacks.
 

@@ -24,6 +24,7 @@ vi.mock('@/screens/ProjectDetail', () => ({
 }))
 
 import { getProject } from '@/lib/api'
+import en from '../../../../messages/en.json'
 import ProjectDetailPage, { generateMetadata } from './page'
 import { ProjectDetailClient } from './ProjectDetailClient'
 
@@ -106,8 +107,25 @@ describe('ProjectDetailPage & generateMetadata', () => {
       },
     })
     const meta = await generateMetadata({ params: Promise.resolve({ id: '1' }) })
-    expect(meta.title).toContain('Solar Park Alpha')
+    // The root layout's template appends the brand, so the page title doesn't.
+    expect(meta.title).toBe('Solar Park Alpha — Green Bond Details')
     expect(meta.description).toContain('Provence, France')
+  })
+
+  it('noindexes a project that does not exist', async () => {
+    mockGetProject.mockResolvedValue(null)
+    const meta = await generateMetadata({ params: Promise.resolve({ id: '999' }) })
+    expect(meta.title).toEqual({
+      absolute: `${en.Metadata.projectNotFound.title} | Heliobond`,
+    })
+    expect(meta.description).toBe(en.Metadata.projectNotFound.description)
+    expect(meta.robots).toEqual({ index: false, follow: false })
+  })
+
+  it('noindexes a non-numeric project id', async () => {
+    const meta = await generateMetadata({ params: Promise.resolve({ id: 'not-a-number' }) })
+    expect(mockGetProject).not.toHaveBeenCalled()
+    expect(meta.robots).toEqual({ index: false, follow: false })
   })
 
   it('renders ProjectDetailClient with initial null data', () => {

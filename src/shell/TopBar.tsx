@@ -1,14 +1,15 @@
 'use client'
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Button, useToast } from '../components'
+import { Button, TransactionsDrawer, useToast } from '../components'
 import { useLocaleSwitcher } from '../i18n/LocaleProvider'
 import { LOCALE_LABELS, LOCALE_NAMES, type Locale } from '../i18n/config'
 import { useWallet, shortAddress } from '../wallet/WalletProvider'
+import { useTransactions } from '../wallet/TransactionsProvider'
 import { useTheme } from '../theme/ThemeProvider'
 import { HORIZON_URL, NETWORK_PASSPHRASE, networkLabel, getExplorerAccountUrl } from '../config/network'
 import { networkMismatchMessage } from '../wallet/networkGuard'
@@ -50,6 +51,9 @@ export function TopBar() {
     checkWalletNetwork,
   } = useWallet()
   const { theme, toggle } = useTheme()
+  const { pendingCount, transactions } = useTransactions()
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const closeDrawer = useCallback(() => setDrawerOpen(false), [])
 
   const [networkOnline, setNetworkOnline] = useState(true)
 
@@ -248,6 +252,46 @@ export function TopBar() {
 
           <LocaleDropdown />
 
+          {(connected || transactions.length > 0) && (
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Transaction activity history"
+              title="Transaction activity history"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
+                borderRadius: 'var(--radius-pill)',
+                border:
+                  pendingCount > 0
+                    ? '1px solid rgba(59, 130, 246, 0.4)'
+                    : '1px solid var(--ink-12)',
+                background: pendingCount > 0 ? 'rgba(59, 130, 246, 0.1)' : 'var(--surface)',
+                color: pendingCount > 0 ? '#3b82f6' : 'var(--ink)',
+                fontFamily: 'var(--font-data)',
+                fontSize: 'var(--type-caption)',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all var(--dur-press) var(--ease-out)',
+              }}
+            >
+              {pendingCount > 0 && (
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: '#3b82f6',
+                    animation: 'hb-pulse 1.4s ease-in-out infinite',
+                  }}
+                />
+              )}
+              {pendingCount > 0 ? `${pendingCount} Pending` : 'Activity'}
+            </button>
+          )}
+
           {connected && address ? (
             <WalletMenu
               address={address}
@@ -265,6 +309,8 @@ export function TopBar() {
             </Button>
           )}
         </div>
+
+        <TransactionsDrawer open={drawerOpen} onClose={closeDrawer} />
       </header>
       {!networkOnline && (
         <div
@@ -406,7 +452,6 @@ function LocaleDropdown() {
   }, [open, locale])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    const locales = Object.keys(LOCALE_LABELS) as Locale[]
     const items = itemRefs.current.filter((el): el is HTMLButtonElement => el !== null)
     if (!items.length) return
     const focused = document.activeElement
