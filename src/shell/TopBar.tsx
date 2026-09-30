@@ -122,11 +122,7 @@ export function TopBar() {
   return (
     <>
       <header className="hb-topbar">
-        <Link
-          href="/"
-          aria-label="Heliobond — home"
-          className="hb-topbar__home"
-        >
+        <Link href="/" aria-label="Heliobond — home" className="hb-topbar__home">
           {mounted && pathname === '/' ? <Mark /> : null}
           <span
             style={{
