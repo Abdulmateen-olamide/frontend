@@ -97,7 +97,10 @@ async function settle<T>(run: Promise<T>): Promise<T> {
   void guarded.then(() => {
     settled = true
   })
-  for (let i = 0; i < 100 && !settled; i++) await vi.runAllTimersAsync()
+  for (let i = 0; i < 100 && !settled; i++) {
+    await vi.dynamicImportSettled()
+    await vi.runAllTimersAsync()
+  }
   const res = await guarded
   if (!res.ok) throw res.e
   return res.v
@@ -156,6 +159,10 @@ afterEach(() => {
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
 })
+
+// Each test re-imports the Stellar SDK after vi.resetModules(), which can exceed
+// the 5s default on a loaded coverage runner.
+vi.setConfig({ testTimeout: 30_000 })
 
 describe('signed transactions', () => {
   it.each(['deposit', 'withdraw', 'claim', 'claim_yield'] as const)(
