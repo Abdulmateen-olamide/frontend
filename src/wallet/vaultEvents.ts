@@ -2,7 +2,7 @@
  * Vault Event Dispatcher for instant balance and state refresh on transaction confirmation (#605).
  */
 
-type Listener = () => void
+type Listener = (txHash?: string, type?: string) => void
 
 const listeners = new Set<Listener>()
 
@@ -21,10 +21,10 @@ export function subscribeTransactionConfirmed(callback: Listener): () => void {
 /**
  * Notify all subscribers that a vault transaction has been confirmed on-chain.
  */
-export function notifyTransactionConfirmed(_txHash?: string, _type?: string): void {
+export function notifyTransactionConfirmed(txHash?: string, type?: string): void {
   listeners.forEach((listener) => {
     try {
-      listener()
+      listener(txHash, type)
     } catch {
       // Ignore listener errors
     }

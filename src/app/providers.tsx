@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { ThemeProvider } from '../theme/ThemeProvider'
 import { WalletProvider, useWallet } from '../wallet/WalletProvider'
+import { TransactionsProvider } from '../wallet/TransactionsProvider'
 import { ToastProvider, SessionTimeoutModal, useToast } from '../components'
 import { SessionProvider } from '../session/SessionProvider'
 import { RecurringInvestmentSync } from '../session/RecurringInvestmentSync'
@@ -163,6 +164,7 @@ export function Providers({ children }: { children: ReactNode }) {
     <ThemeProvider>
       <WalletProvider>
         <SessionProvider>
+          <TransactionsProvider>
           <ToastProvider>
             <WatchlistProvider>
               <YieldAlertProvider>
@@ -176,6 +178,7 @@ export function Providers({ children }: { children: ReactNode }) {
               </YieldAlertProvider>
             </WatchlistProvider>
           </ToastProvider>
+          </TransactionsProvider>
         </SessionProvider>
       </WalletProvider>
     </ThemeProvider>
