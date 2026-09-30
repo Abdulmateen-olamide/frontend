@@ -26,6 +26,11 @@ export interface BondHistoryPoint {
 const YIELD_FILTER_KEY = 'bond_yield_filter'
 const YIELD_DEFAULT: [number, number] = [0, 15]
 
+export type SortDirection = 'asc' | 'desc'
+
+const SORT_ORDER_KEY = 'bond_sort_order'
+const SORT_DEFAULT: SortDirection = 'asc'
+
 export function getPersistedYieldRange(): [number, number] {
   if (typeof window === 'undefined') return YIELD_DEFAULT
   try {
@@ -114,6 +119,89 @@ export function setYieldRange(range: [number, number]): void {
   yieldRangeSnapshot = range
   persistYieldRange(range)
   yieldRangeListeners.forEach((listener) => listener())
+}
+
+export function getPersistedSortOrder(): SortDirection {
+  if (typeof window === 'undefined') return SORT_DEFAULT
+  try {
+    const url = new URL(window.location.href)
+    const fromUrl =
+      url.searchParams.get('sortOrder') ||
+      url.searchParams.get('sortDir') ||
+      url.searchParams.get('sort') ||
+      url.searchParams.get('direction')
+    if (fromUrl === 'asc' || fromUrl === 'desc') return fromUrl
+    const stored = localStorage.getItem(SORT_ORDER_KEY)
+    if (stored === 'asc' || stored === 'desc') return stored
+  } catch {}
+  return SORT_DEFAULT
+}
+
+export function persistSortOrder(direction: SortDirection): void {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(SORT_ORDER_KEY, direction)
+    const url = new URL(window.location.href)
+    url.searchParams.set('sortOrder', direction)
+    window.history.replaceState(null, '', url.toString())
+  } catch {}
+}
+
+export const getPersistedSortDirection = getPersistedSortOrder
+export const persistSortDirection = persistSortOrder
+
+let sortOrderSnapshot: SortDirection = SORT_DEFAULT
+const sortOrderListeners = new Set<() => void>()
+
+/**
+ * Subscribes to the saved bond sort order, including changes made in another tab
+ * and changes to the `?sortOrder` query parameter. Same external-store shape as
+ * the yield range so `useBondFilters` never copies storage into state (#598).
+ */
+export function subscribeSortOrder(listener: () => void): () => void {
+  if (!sortOrderListeners.size) sortOrderSnapshot = getPersistedSortOrder()
+  sortOrderListeners.add(listener)
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', onSortOrderStorage)
+    document.addEventListener('visibilitychange', onSortOrderVisible)
+  }
+  return () => {
+    sortOrderListeners.delete(listener)
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', onSortOrderStorage)
+      document.removeEventListener('visibilitychange', onSortOrderVisible)
+    }
+  }
+}
+
+function republishSortOrder(): void {
+  sortOrderSnapshot = getPersistedSortOrder()
+  sortOrderListeners.forEach((listener) => listener())
+}
+
+function onSortOrderStorage(event: StorageEvent): void {
+  if (event.key && event.key !== SORT_ORDER_KEY) return
+  republishSortOrder()
+}
+
+function onSortOrderVisible(): void {
+  if (document.visibilityState === 'visible') republishSortOrder()
+}
+
+export function getSortOrder(): SortDirection {
+  return sortOrderSnapshot
+}
+
+/** The default on the server, so the first client render matches the server HTML. */
+export function getServerSortOrder(): SortDirection {
+  return SORT_DEFAULT
+}
+
+/** Saves a new sort order and notifies subscribers. */
+export function setSortOrder(direction: SortDirection): void {
+  sortOrderSnapshot = direction
+  persistSortOrder(direction)
+  sortOrderListeners.forEach((listener) => listener())
 }
 
 export function filterBondsByYield(bonds: Bond[], range: [number, number]): Bond[] {
