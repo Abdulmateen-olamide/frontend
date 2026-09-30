@@ -69,10 +69,10 @@ function normalizeCode(code: string): string {
 
 function extractCodeFromError(error: unknown): string | null {
   if (!error || typeof error !== 'object') return null
-  const obj = error as Record<string, any>
+  const obj = error as Record<string, unknown>
   // If it looks like an Axios/Axios-like error with a response
   if (obj.response) {
-    const status = obj.response.status
+    const status = (obj.response as Record<string, unknown>).status
     if (typeof status === 'number' && status >= 500) {
       return String(status)
     }

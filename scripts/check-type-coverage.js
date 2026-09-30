@@ -48,8 +48,17 @@ function checkFile(filePath) {
     if (COMMENT_LINE_RE.test(line)) continue
     if (STRING_LINE_RE.test(line)) continue
 
-    // Skip lines that are only i18n message content
+    // Skip lines that are only i18n message content or JSX text content
     if (line.includes('"any ') || line.includes("'any ") || line.includes('`any ')) continue
+    // Skip JSX text content (text between > and < or between } and <)
+    if (/[>}]\s*[^<{]*\bany\b[^<{]*</.test(line)) continue
+    // Skip prose like "or any part" or "any other"
+    if (
+      /\b(or|and|of|in|for|with|by|to|from)\s+any\s+(other|part|time|way|file|string|number)\b/i.test(
+        line,
+      )
+    )
+      continue
 
     const matches = line.matchAll(TYPE_ANY_RE)
     for (const m of matches) {
