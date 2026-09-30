@@ -59,19 +59,19 @@
   },
   "Landing": {
     "eyebrow": "Bonos verdes · en Stellar",
-    "title": "Own a piece of the energy transition.",
-    "titleAccent": " From one dollar.",
-    "sub": "A transparent pool funding verified green projects. Every figure traces back to chain in two taps — no surprises, ever.",
-    "ctaStart": "Start with one dollar",
-    "ctaExplore": "See where the pool works",
+    "title": "Participa en la transición energética.",
+    "titleAccent": " Invierte en proyectos verdes verificados.",
+    "sub": "Un fondo transparente que financia proyectos verdes verificados. Cada cifra se puede consultar en la cadena.",
+    "ctaStart": "Explora las opciones de inversión",
+    "ctaExplore": "Descubre dónde trabaja el fondo",
     "poolValue": "Pool value",
     "projectsFunded": "Projects funded",
     "returnRate": "Rentabilidad del bono proyectada",
     "countersNote": "Live from the vault contract. Tap any figure for its on-chain proof.",
     "howTitle": "How it works",
     "howSub": "Un fondo, muchos proyectos. Deposita USDC y recibe participaciones en una cartera seleccionada y evaluada por un oráculo.",
-    "step1Title": "Deposit USDC",
-    "step1Body": "From one dollar. You always see what you receive before you sign.",
+    "step1Title": "Deposita USDC",
+    "step1Body": "El mínimo actual se muestra antes de confirmar tu depósito.",
     "step2Title": "Receive shares",
     "step2Body": "Shares — technically SEP-41 tokens called HBS. Your stake in the whole pool.",
     "step3Title": "The pool funds projects",
@@ -150,7 +150,7 @@
     "liquidLine": "Today the pool is <b>29% liquid</b> — you can withdraw your liquid share anytime.",
     "investCta": "Invest {amount} USDC",
     "investCtaEmpty": "Invest",
-    "reasonMin": "Enter an amount of at least 1 USDC",
+    "reasonMin": "Introduce al menos {min} USDC",
     "capMessage": "You hold a balance of ${cap}. You can invest up to this amount today.",
     "maxChip": "Max",
     "depositMaxAvailable": "Invest max available",
@@ -215,7 +215,7 @@
     "withdrawCta": "Withdraw ${amount}",
     "withdrawCtaEmpty": "Withdraw",
     "reasonExceeds": "Amount exceeds what is liquid right now — use Max",
-    "reasonMin": "Enter an amount of at least 1 USDC",
+    "reasonMin": "Introduce al menos {min} USDC",
     "cancel": "Cancel",
     "pendingH1": "Processing your withdrawal",
     "pendingSub": "Usually ~5 seconds on Stellar. tx 4d2c…9af1 ↗",
@@ -553,7 +553,7 @@
   "Metadata": {
     "home": {
       "title": "La energía solar, hecha finanzas",
-      "description": "Invierte desde un dólar en la transición energética. Un fondo transparente que financia proyectos verdes verificados en Stellar."
+      "description": "Participa en la transición energética mediante un fondo transparente que financia proyectos verdes verificados en Stellar."
     },
     "connect": {
       "title": "Conecta tu cartera",

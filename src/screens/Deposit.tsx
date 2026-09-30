@@ -23,7 +23,6 @@ import { RecurringInvestmentOptions } from '../components/RecurringInvestmentOpt
 
 const USER_BALANCE_USDC = 240
 const DEFAULT_DEPOSIT_USDC = '100'
-const QUICK_DEPOSIT_AMOUNTS_USDC = [25, 50, 100]
 const RATE_STALE_AFTER_SECONDS = 30
 const DEFAULT_SLIPPAGE_TOLERANCE = 0.005 // 0.5%
 
@@ -55,6 +54,14 @@ export function Deposit({ onDone }: DepositProps) {
     refresh: refreshVault,
   } = useVault()
   const { minDeposit, paused, maxTx } = useVaultLimits()
+  const balance = USER_BALANCE_USDC
+  const quickDepositAmounts = Array.from(
+    new Set(
+      [minDeposit, Math.min(250, balance), Math.min(500, balance)].filter(
+        (preset) => preset >= minDeposit,
+      ),
+    ),
+  )
   const [step, setStep] = useState<DepositStep>('amount')
   const [amount, setAmount] = useState(DEFAULT_DEPOSIT_USDC)
   const [investmentId, setInvestmentId] = useState<string | null>(null)
@@ -199,8 +206,6 @@ export function Deposit({ onDone }: DepositProps) {
   }
 
   const price = livePrice
-  const balance = USER_BALANCE_USDC
-
   const renderStep = (currentStep: DepositStep) => {
     switch (currentStep) {
       case 'amount':
@@ -214,7 +219,9 @@ export function Deposit({ onDone }: DepositProps) {
               currency="USDC"
               balanceLabel={t('balanceLabel')}
               balance={USER_BALANCE_USDC.toFixed(2)}
-              chips={QUICK_DEPOSIT_AMOUNTS_USDC}
+              chips={quickDepositAmounts}
+              min={minDeposit}
+              max={Math.min(balance, maxTx)}
               cap={balance}
               capMessage={t('capMessage', { cap: balance })}
               maxChipLabel={t('maxChip')}
@@ -319,11 +326,27 @@ export function Deposit({ onDone }: DepositProps) {
               style={{ width: '100%', marginTop: 20 }}
               disabled={n < minDeposit || n > balance || n > maxTx || paused}
               reason={
-                paused ? 'Vault paused' : n > balance ? t('reasonExceeds') : n > maxTx ? 'Amount exceeds pool limit' : n < minDeposit ? `Minimum deposit is ${minDeposit} USDC` : undefined
+                paused
+                  ? 'Vault paused'
+                  : n > balance
+                    ? t('reasonExceeds')
+                    : n > maxTx
+                      ? 'Amount exceeds pool limit'
+                      : n < minDeposit
+                        ? t('reasonMin', { min: formatDecimal(minDeposit, 2) })
+                        : undefined
               }
               onClick={() => {
                 if (n < minDeposit || n > balance || n > maxTx || paused) {
-                  setTxError(paused ? 'vault_paused' : n > balance ? 'amount_exceeds_balance' : n > maxTx ? 'amount_exceeds_max_tx' : 'amount_too_low')
+                  setTxError(
+                    paused
+                      ? 'vault_paused'
+                      : n > balance
+                        ? 'amount_exceeds_balance'
+                        : n > maxTx
+                          ? 'amount_exceeds_max_tx'
+                          : 'amount_too_low',
+                  )
                   setTimeout(() => scrollToFirstError(document), 50)
                   return
                 }
