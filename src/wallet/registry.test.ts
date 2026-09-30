@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import { StrKey } from '@stellar/stellar-sdk'
 import {
+  SIMULATION_SOURCE_ADDRESS,
   mapOnChainProject,
   fetchTotalProjects,
   fetchProjectsPage,
@@ -39,6 +41,11 @@ describe('registry client', () => {
     expect(mapped.fundedAmount).toBe(500000)
     expect(mapped.location).toBe('Ouarzazate, Morocco')
     expect(mapped.type).toBe('Solar')
+  })
+
+  it('uses a valid Ed25519 public key as the default simulation source (#625)', () => {
+    expect(SIMULATION_SOURCE_ADDRESS).toHaveLength(56)
+    expect(StrKey.isValidEd25519PublicKey(SIMULATION_SOURCE_ADDRESS)).toBe(true)
   })
 
   it('falls back gracefully to fixtures when registry contract is unset', async () => {
