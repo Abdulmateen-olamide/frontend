@@ -29,7 +29,8 @@ not set, so the app works out of the box without a running backend.
 
 | Variable | Required | Example | Purpose |
 |---|---|---|---|
-| `NEXT_PUBLIC_API_URL` | No | `http://localhost:3001` | Backend base URL. When absent every call uses local fixture data and no HTTP request is made. |
+| `NEXT_PUBLIC_API_URL` | No | `http://localhost:3001` | Backend base URL. When absent, the app runs in demo mode and uses local fixture data. No HTTP requests are made. |
+| `NEXT_PUBLIC_DEMO_MODE` | No | `true` | Force demo mode even when `NEXT_PUBLIC_API_URL` is set. Useful for testing or staging previews without a live backend. |
 
 Copy `.env.example` to `.env.local` and set `NEXT_PUBLIC_API_URL` to point at
 your local or staging backend before running `bun run dev`.
@@ -114,11 +115,13 @@ Fetches all bond projects.
 
 **Backend endpoint:** `GET /projects`
 
-**Returns:** Array of `Project` objects. Empty array on network error (falls back
-to fixture data instead, see [fallback behavior](#demo--fixture-fallback)).
+**Returns:** Array of `Project` objects.
+
+**Throws:** `ApiError` on network failures, HTTP errors, or timeouts (after 8 seconds).
 
 **Demo fallback:** Returns all projects from `src/data.ts` via
-`selectProjects()`.
+`selectProjects()`. **On-chain priority:** If a project registry contract is
+configured, data is read from the Stellar blockchain first.
 
 **Example:**
 
@@ -155,9 +158,13 @@ by deferring off-screen projects.
 
 **Returns:** `PaginatedProjectsResponse`
 
+**Throws:** `ApiError` on network failures, HTTP errors, or timeouts (after 8 seconds).
+
 **Demo fallback:** Slices `selectProjects()` with the same pagination math.
 Handles both paginated API responses (`{ projects, total, page, ... }`) and
-legacy flat-array responses from older backend versions.
+legacy flat-array responses from older backend versions. **On-chain priority:**
+If a project registry contract is configured, data is read from the Stellar
+blockchain first.
 
 **Example:**
 
@@ -193,8 +200,13 @@ Fetches a single project with its full detail record.
 
 **Returns:** `ProjectWithDetail` or `null` when the project is not found.
 
+**Throws:** `ApiError` on network failures, HTTP errors, or timeouts (after 8 seconds).
+
 **Demo fallback:** Looks up `selectProjectById(id)` and `selectProjectDetail(id)`
-from fixture data. Returns `null` if either is missing.
+from fixture data. Returns `null` if either is missing. **On-chain priority:**
+If a project registry contract is configured, project and detail data are read
+from the Stellar blockchain first, with a `verifiedMetadata` flag indicating
+on-chain verification.
 
 **Example:**
 
@@ -246,11 +258,10 @@ Creates a new investment record on the backend.
 
 **Returns:** `Investment`
 
-**Throws:** `Error('Invalid investment input')` for any of:
-- Non-integer `projectId`
-- `projectId < 1`
-- Non-finite `amount`
-- `amount <= 0`
+**Throws:**
+- `Error('Invalid investment input')` for invalid input (non-integer `projectId`,
+  `projectId < 1`, non-finite `amount`, or `amount <= 0`)
+- `ApiError` on network failures, HTTP errors, or timeouts (after 8 seconds)
 
 Input is validated _before_ any network call, so invalid inputs never reach
 the backend.
@@ -293,6 +304,8 @@ Fetches 30-day bond price and yield history for a project.
 
 **Returns:** Array of `PricePoint` objects sorted in ascending chronological
 order (oldest first). The backend response is re-sorted if necessary.
+
+**Throws:** `ApiError` on network failures, HTTP errors, or timeouts (after 8 seconds).
 
 **Demo fallback:** Generates a deterministic 30-day mock series using
 `projectId` as a seed so the sparkline shape is consistent per project across
@@ -353,17 +366,90 @@ if (ok) {
 
 ## Error handling
 
-All network functions follow the same pattern:
+### Data sources and fallback priority
 
-1. **Optimistic attempt** — call the backend, parse the response.
-2. **On failure** — log a `console.warn` with the endpoint name and fall back to
-   local fixture data without surfacing an error to the user.
-3. **Never throw** for network errors — only `createInvestment` throws, and only
-   for _invalid input_, never for network failures.
+The API client reads project data from three sources in the following priority order:
 
-The one input-validation exception is `createInvestment`, which throws
-`Error('Invalid investment input')` synchronously for bad `projectId` or
-`amount`. Callers should catch this and show a validation message.
+1. **On-chain registry** — If `isRegistryConfigured()` returns `true` (when a
+   Stellar ProjectRegistry contract is deployed and configured), project data
+   is read directly from the blockchain via Stellar RPC. This is the highest-
+   trust path and bypasses HTTP entirely.
+2. **Demo fixtures** — If `NEXT_PUBLIC_API_URL` is **not** set (or
+   `NEXT_PUBLIC_DEMO_MODE=true` is explicitly enabled), all functions return
+   deterministic mock data from `src/data.ts` and `src/data/projectDetails.ts`.
+   No HTTP requests are made. A "Demo data" badge appears in the UI when
+   `shouldShowDemoBadge()` returns `true`.
+3. **HTTP backend** — If `NEXT_PUBLIC_API_URL` is set and demo mode is off,
+   the client calls the configured backend. **Failures throw `ApiError`** —
+   they are not silently swallowed.
+
+### ApiError
+
+Network failures, HTTP errors (non-2xx status), and timeouts all throw `ApiError`:
+
+```ts
+import { ApiError } from '@/lib/api'
+
+try {
+  const projects = await getProjects()
+} catch (err) {
+  if (err instanceof ApiError) {
+    console.error('API failed:', err.status, err.code, err.message)
+    // err.status: HTTP status (404, 503, etc.) if applicable
+    // err.code: Machine-readable code (e.g., "HTTP_503", "rpc-timeout")
+    // err.message: Human-readable message
+  }
+}
+```
+
+`ApiError` is defined in `src/lib/error.ts` and includes optional `status`,
+`code`, and `cause` fields for debugging and error reporting.
+
+### Timeout behavior
+
+All HTTP calls are wrapped in an 8-second timeout (`API_TIMEOUT_MS`). If a
+request does not complete within 8 seconds, it is aborted and an error is
+reported to telemetry with `{ kind: 'rpc-timeout', context: { target: 'api' } }`.
+The timeout error is then thrown to the caller.
+
+```ts
+// After 8 seconds, throws:
+// Error: "timed out after 8000ms"
+const projects = await getProjects()
+```
+
+### NEXT_PUBLIC_DEMO_MODE
+
+To force demo mode even when `NEXT_PUBLIC_API_URL` is set (useful for testing
+or staging previews without a live backend), set:
+
+```bash
+NEXT_PUBLIC_DEMO_MODE=true
+```
+
+When enabled, `shouldShowDemoBadge()` returns `true` and a visual indicator
+appears in the UI so users know the data is not real.
+
+### Usage example with error handling
+
+```ts
+import { getProjects, ApiError } from '@/lib/api'
+
+async function loadExploreScreen() {
+  try {
+    const projects = await getProjects()
+    // success — render projects
+  } catch (err) {
+    if (err instanceof ApiError) {
+      // show user-facing error: "Could not load projects. Please try again."
+      // log to error reporting: err.status, err.code, err.message
+    } else {
+      // unexpected error — rethrow or log
+      throw err
+    }
+  }
+}
+```
 
 For mapping backend error codes to user-facing strings, see
 [`src/lib/errorMessages.ts`](src/lib/errorMessages.ts) and
@@ -373,20 +459,37 @@ For mapping backend error codes to user-facing strings, see
 
 ## Demo / fixture fallback
 
-When `NEXT_PUBLIC_API_URL` is not set (or is empty), **no HTTP requests are
-made**. Every function returns deterministic fixture data from:
+When `NEXT_PUBLIC_API_URL` is **not set** (or is empty), the app runs in **demo
+mode**. In this mode:
 
-- `src/data.ts` — pool summary, projects list, investor position, activity feed
-- `src/data/projectDetails.ts` — per-project oracle history, creator info,
-  funding timeline, price history
-- `src/state/selectors.ts` — flat accessor functions over the above
+- **No HTTP requests are made** — every API function returns deterministic
+  fixture data immediately.
+- Fixture data comes from:
+  - `src/data.ts` — pool summary, projects list, investor position, activity feed
+  - `src/data/projectDetails.ts` — per-project oracle history, creator info,
+    funding timeline, price history
+  - `src/state/selectors.ts` — flat accessor functions over the above
+- `shouldShowDemoBadge()` returns `true`, and the UI displays a "Demo data"
+  badge so users know the data is not live.
 
 This means the full click-through works without a backend, including the Explore,
 Project Detail, and Deposit screens.
 
-When `NEXT_PUBLIC_API_URL` _is_ set and a request fails, the same fixture
-fallback kicks in silently. The app never shows a blank screen due to a missing
-or slow backend.
+### Demo mode vs. HTTP failures
+
+**When `NEXT_PUBLIC_API_URL` is set**, demo mode is **off**. HTTP failures
+(timeouts, 5xx errors, network errors) **throw `ApiError`** and do not fall
+back to fixtures. The caller must handle the error and show appropriate UI
+(loading state, retry button, error message).
+
+To force demo mode even when `NEXT_PUBLIC_API_URL` is set, use:
+
+```bash
+NEXT_PUBLIC_DEMO_MODE=true
+```
+
+This is useful for testing, staging previews, or demos where you want to use
+the production-like URL structure but don't have a live backend.
 
 ---
 
@@ -423,7 +526,7 @@ export default async function Page({ params }: { params: { id: string } }) {
 ### Creating an investment
 
 ```ts
-import { createInvestment } from '@/lib/api'
+import { createInvestment, ApiError } from '@/lib/api'
 
 async function handleDeposit(projectId: number, amount: number) {
   try {
@@ -431,7 +534,12 @@ async function handleDeposit(projectId: number, amount: number) {
     router.push(investment.projectUrl)
   } catch (err) {
     if (err instanceof Error && err.message === 'Invalid investment input') {
-      setFormError('Please enter a valid amount.')
+      setFormError('Please enter a valid amount and project ID.')
+    } else if (err instanceof ApiError) {
+      setFormError('Network error. Please check your connection and try again.')
+      console.error('Investment creation failed:', err.status, err.message)
+    } else {
+      throw err
     }
   }
 }
