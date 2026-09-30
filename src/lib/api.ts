@@ -10,10 +10,12 @@ import {
   isRegistryConfigured,
   fetchProjectsPage,
   fetchProjectWithDetails,
+  type MetadataVerificationStatus,
 } from '../wallet/registry'
 import { ApiError } from './error'
 import { loginBiometric } from './webauthn'
 export { ApiError } from './error'
+export type { MetadataVerificationStatus } from '../wallet/registry'
 import { reportError } from './errorReporting'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
@@ -73,7 +75,7 @@ export const apiFetch = request
 export interface ProjectWithDetail {
   project: Project
   detail: ProjectDetail
-  verifiedMetadata?: boolean
+  verifiedMetadata?: MetadataVerificationStatus
 }
 
 export interface Investment {
@@ -174,7 +176,7 @@ export async function getProject(id: number): Promise<ProjectWithDetail | null> 
 
   if (isDemoMode()) {
     if (!mockProject || !mockDetail) return null
-    return { project: mockProject, detail: mockDetail, verifiedMetadata: true }
+    return { project: mockProject, detail: mockDetail, verifiedMetadata: 'unverified' }
   }
 
   try {

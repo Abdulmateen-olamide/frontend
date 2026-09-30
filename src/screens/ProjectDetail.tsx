@@ -6,6 +6,7 @@ import {
   DemoDataBadge,
   PinIcon,
   ScoreGauge,
+  ShieldAlertIcon,
   ShieldCheckIcon,
   WatchlistButton,
   YieldAlertButton,
@@ -16,6 +17,7 @@ import { formatMoney } from '../lib/format'
 
 import { type Project } from '../data'
 import { type ProjectDetail as ProjectDetailData } from '../data/projectDetails'
+import { type MetadataVerificationStatus } from '../wallet/registry'
 
 /**
  * ProjectDetail — the full story of one project the pool funds. Hero, the
@@ -26,7 +28,7 @@ import { type ProjectDetail as ProjectDetailData } from '../data/projectDetails'
 export interface ProjectDetailProps {
   project: Project
   detail: ProjectDetailData
-  verifiedMetadata?: boolean
+  verifiedMetadata?: MetadataVerificationStatus
   onInvest: () => Promise<string>
   onBack?: () => void
   children?: React.ReactNode
@@ -35,7 +37,7 @@ export interface ProjectDetailProps {
 export const ProjectDetail = memo(function ProjectDetail({
   project,
   detail,
-  verifiedMetadata = true,
+  verifiedMetadata = 'unverified',
   onInvest,
   onBack,
   children,
@@ -118,10 +120,18 @@ export const ProjectDetail = memo(function ProjectDetail({
             <Badge tone="growth" icon={<ShieldCheckIcon />}>
               {t('verifiedSince', { since: creatorSince })}
             </Badge>
-            {verifiedMetadata !== false && (
+            {verifiedMetadata === 'verified' && (
               <Badge tone="growth" icon={<ShieldCheckIcon />}>
-                Verified metadata
+                {t('verifiedMetadata')}
               </Badge>
+            )}
+            {verifiedMetadata === 'mismatch' && (
+              <Badge tone="ember" role="status" icon={<ShieldAlertIcon />}>
+                {t('metadataMismatch')}
+              </Badge>
+            )}
+            {verifiedMetadata === 'unverified' && (
+              <Badge tone="neutral">{t('unverifiedMetadata')}</Badge>
             )}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

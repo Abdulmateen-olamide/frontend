@@ -27,10 +27,10 @@ not set, so the app works out of the box without a running backend.
 
 ## Environment configuration
 
-| Variable | Required | Example | Purpose |
-|---|---|---|---|
-| `NEXT_PUBLIC_API_URL` | No | `http://localhost:3001` | Backend base URL. When absent, the app runs in demo mode and uses local fixture data. No HTTP requests are made. |
-| `NEXT_PUBLIC_DEMO_MODE` | No | `true` | Force demo mode even when `NEXT_PUBLIC_API_URL` is set. Useful for testing or staging previews without a live backend. |
+| Variable                | Required | Example                 | Purpose                                                                                                                |
+| ----------------------- | -------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_API_URL`   | No       | `http://localhost:3001` | Backend base URL. When absent, the app runs in demo mode and uses local fixture data. No HTTP requests are made.       |
+| `NEXT_PUBLIC_DEMO_MODE` | No       | `true`                  | Force demo mode even when `NEXT_PUBLIC_API_URL` is set. Useful for testing or staging previews without a live backend. |
 
 Copy `.env.example` to `.env.local` and set `NEXT_PUBLIC_API_URL` to point at
 your local or staging backend before running `bun run dev`.
@@ -66,10 +66,10 @@ Returned by [`getProject`](#getproject).
 
 ```ts
 interface Investment {
-  id: number          // Server-assigned investment ID
-  projectId: number   // The project invested in
-  amount: number      // USDC amount
-  projectUrl: string  // Canonical URL, e.g. "/projects/42"
+  id: number // Server-assigned investment ID
+  projectId: number // The project invested in
+  amount: number // USDC amount
+  projectUrl: string // Canonical URL, e.g. "/projects/42"
 }
 ```
 
@@ -80,10 +80,10 @@ Returned by [`createInvestment`](#createinvestment).
 ```ts
 interface PaginatedProjectsResponse {
   projects: Project[]
-  total: number     // Total matching records (not just this page)
-  page: number      // 1-indexed current page
-  pageSize: number  // Items per page
-  hasMore: boolean  // Whether another page exists
+  total: number // Total matching records (not just this page)
+  page: number // 1-indexed current page
+  pageSize: number // Items per page
+  hasMore: boolean // Whether another page exists
 }
 ```
 
@@ -93,8 +93,8 @@ Returned by [`getProjectsPaginated`](#getprojectspaginated).
 
 ```ts
 interface PricePoint {
-  date: string   // ISO 8601 date, e.g. "2025-03-14"
-  price: number  // Bond price in USDC
+  date: string // ISO 8601 date, e.g. "2025-03-14"
+  price: number // Bond price in USDC
   yield?: number // Yield at that date (percentage)
 }
 ```
@@ -138,7 +138,7 @@ const projects = await getProjects()
 
 ```ts
 async function getProjectsPaginated(
-  page?: number,     // default: 1
+  page?: number, // default: 1
   pageSize?: number, // default: 12
 ): Promise<PaginatedProjectsResponse>
 ```
@@ -151,10 +151,10 @@ by deferring off-screen projects.
 
 **Parameters:**
 
-| Param | Type | Default | Description |
-|---|---|---|---|
-| `page` | `number` | `1` | 1-indexed page number |
-| `pageSize` | `number` | `12` | Items per page |
+| Param      | Type     | Default | Description           |
+| ---------- | -------- | ------- | --------------------- |
+| `page`     | `number` | `1`     | 1-indexed page number |
+| `pageSize` | `number` | `12`    | Items per page        |
 
 **Returns:** `PaginatedProjectsResponse`
 
@@ -194,9 +194,9 @@ Fetches a single project with its full detail record.
 
 **Parameters:**
 
-| Param | Type | Description |
-|---|---|---|
-| `id` | `number` | Must be a positive integer (`id >= 1`). Non-integer, negative, zero, or `NaN` ids return `null` immediately without a network call. |
+| Param | Type     | Description                                                                                                                         |
+| ----- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `id`  | `number` | Must be a positive integer (`id >= 1`). Non-integer, negative, zero, or `NaN` ids return `null` immediately without a network call. |
 
 **Returns:** `ProjectWithDetail` or `null` when the project is not found.
 
@@ -205,8 +205,8 @@ Fetches a single project with its full detail record.
 **Demo fallback:** Looks up `selectProjectById(id)` and `selectProjectDetail(id)`
 from fixture data. Returns `null` if either is missing. **On-chain priority:**
 If a project registry contract is configured, project and detail data are read
-from the Stellar blockchain first, with a `verifiedMetadata` flag indicating
-on-chain verification.
+from the Stellar blockchain first, with a `verifiedMetadata` status (`'verified' | 'mismatch' | 'unverified'`)
+indicating cryptographic on-chain hash verification of the off-chain metadata.
 
 **Example:**
 
@@ -220,7 +220,7 @@ if (result) {
 }
 
 // Invalid ids return null immediately — no request fired:
-await getProject(-1)  // null
+await getProject(-1) // null
 await getProject(NaN) // null
 await getProject(1.5) // null
 ```
@@ -230,10 +230,7 @@ await getProject(1.5) // null
 ### `createInvestment`
 
 ```ts
-async function createInvestment(input: {
-  projectId: number
-  amount: number
-}): Promise<Investment>
+async function createInvestment(input: { projectId: number; amount: number }): Promise<Investment>
 ```
 
 Creates a new investment record on the backend.
@@ -251,14 +248,15 @@ Creates a new investment record on the backend.
 
 **Parameters:**
 
-| Field | Type | Constraints |
-|---|---|---|
-| `projectId` | `number` | Must be a positive integer (`>= 1`). Throws on invalid input. |
-| `amount` | `number` | Must be a positive finite number (`> 0`). Throws on invalid input. |
+| Field       | Type     | Constraints                                                        |
+| ----------- | -------- | ------------------------------------------------------------------ |
+| `projectId` | `number` | Must be a positive integer (`>= 1`). Throws on invalid input.      |
+| `amount`    | `number` | Must be a positive finite number (`> 0`). Throws on invalid input. |
 
 **Returns:** `Investment`
 
 **Throws:**
+
 - `Error('Invalid investment input')` for invalid input (non-integer `projectId`,
   `projectId < 1`, non-finite `amount`, or `amount <= 0`)
 - `ApiError` on network failures, HTTP errors, or timeouts (after 8 seconds)
@@ -279,8 +277,8 @@ const investment = await createInvestment({ projectId: 3, amount: 250 })
 // { id: 84712, projectId: 3, amount: 250, projectUrl: '/projects/3' }
 
 // Invalid — throws before any HTTP call
-await createInvestment({ projectId: 0, amount: 100 })  // throws
-await createInvestment({ projectId: 1, amount: -50 })  // throws
+await createInvestment({ projectId: 0, amount: 100 }) // throws
+await createInvestment({ projectId: 1, amount: -50 }) // throws
 await createInvestment({ projectId: 1.5, amount: 100 }) // throws
 ```
 
@@ -298,9 +296,9 @@ Fetches 30-day bond price and yield history for a project.
 
 **Parameters:**
 
-| Param | Type | Description |
-|---|---|---|
-| `projectId` | `number` | Project ID |
+| Param       | Type     | Description |
+| ----------- | -------- | ----------- |
+| `projectId` | `number` | Project ID  |
 
 **Returns:** Array of `PricePoint` objects sorted in ascending chronological
 order (oldest first). The backend response is re-sorted if necessary.
@@ -342,6 +340,7 @@ Triggers a WebAuthn biometric prompt (Face ID / Touch ID) and delegates to the c
 **Backend dependency:** This repository does not implement these endpoints. A backend must issue expiring, single-use challenges, verify assertions against stored public keys and the expected origin/RP ID, and establish an authenticated session before returning verification success. The client boolean is UI feedback, not server authorization.
 
 **Returns:** `true` if the biometric assertion was successfully verified by the server, `false` if:
+
 - The username is missing or blank (there is no shared default identity)
 - WebAuthn is not supported (`window.PublicKeyCredential` is absent)
 - The user cancelled or failed the prompt
