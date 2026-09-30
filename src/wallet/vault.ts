@@ -32,6 +32,7 @@ import {
 } from '../config/network'
 import type { xdr as XdrTypes } from '@stellar/stellar-sdk'
 import { notifyTransactionConfirmed } from './vaultEvents'
+import { MIN_DEPOSIT_USDC, MIN_WITHDRAW_SHARES } from '../config/vault'
 
 /** USDC and HBS shares are i128 values with 7 decimals on-chain. */
 const SCALE = 1e7
@@ -317,6 +318,52 @@ export async function fetchUtilizationBps(
       setOffline(true)
     }
     return 0
+  }
+}
+
+export interface VaultLimits {
+  paused: boolean
+  minDeposit: number
+  minWithdrawShares: number
+  maxTx: number
+  lockExpiresAt: number
+  utilizationBps: number
+}
+
+export async function fetchVaultLimits(sourceAddress: string, network = STELLAR_NETWORK): Promise<VaultLimits> {
+  const defaults: VaultLimits = {
+    paused: false,
+    minDeposit: MIN_DEPOSIT_USDC,
+    minWithdrawShares: MIN_WITHDRAW_SHARES,
+    maxTx: 482,
+    lockExpiresAt: 0,
+    utilizationBps: 0
+  }
+
+  if (!CONTRACT_ID || offline) {
+    return defaults
+  }
+
+  const { scValToNative, Address } = await import('@stellar/stellar-sdk')
+
+  try {
+    const [pausedVal, lockVal, maxTxVal, utilVal] = await Promise.all([
+      sorobanSimulate(sourceAddress, 'is_paused', [], network).catch(() => undefined),
+      sorobanSimulate(sourceAddress, 'get_deposit_lock_expiry', [new Address(sourceAddress).toScVal()], network).catch(() => undefined),
+      sorobanSimulate(sourceAddress, 'max_transaction_amount', [], network).catch(() => undefined),
+      sorobanSimulate(sourceAddress, 'get_utilization_bps', [], network).catch(() => undefined)
+    ])
+
+    return {
+      paused: pausedVal !== undefined ? Boolean(scValToNative(pausedVal)) : defaults.paused,
+      minDeposit: defaults.minDeposit,
+      minWithdrawShares: defaults.minWithdrawShares,
+      maxTx: maxTxVal !== undefined ? Number(scValToNative(maxTxVal)) / SCALE : defaults.maxTx,
+      lockExpiresAt: lockVal !== undefined ? Number(scValToNative(lockVal)) : defaults.lockExpiresAt,
+      utilizationBps: utilVal !== undefined ? Number(scValToNative(utilVal)) : defaults.utilizationBps
+    }
+  } catch (e) {
+    return defaults
   }
 }
 

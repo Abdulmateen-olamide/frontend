@@ -21,7 +21,7 @@ import { projectedReturn } from '../lib/bondUtils'
 // These are kept as plain numbers here so that if Deposit.tsx ever changes them
 // the test will fail loudly, alerting the developer to update the UI copy.
 const DEPOSIT_FEE_USDC = 0.01
-const MIN_DEPOSIT_USDC = 1
+const MIN_DEPOSIT_USDC = 100
 
 // ─── Helper: net proceeds formula used in the Deposit preview ───────────────
 /**
