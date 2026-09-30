@@ -232,6 +232,18 @@ describe('signed transactions', () => {
     // Min return = 15.75 * 0.995 = 15.67125 USDC.
     const call = invocation(simulatedTx(2))
     expect(call).toEqual({
+  it('withdraw(shares_amount: i128, min_usdc_return: i128) reports the returned USDC amount', async () => {
+    const vault = await loadVault()
+    rpcMock.getTransaction.mockResolvedValue({
+      status: 'SUCCESS',
+      returnValue: nativeToScVal(1_975_000_000n, { type: 'i128' }),
+    })
+    const result = await settle(vault.submitWithdraw(200, USER, sign))
+
+    expect(result.hash).toBe(simulatedTx().hash().toString('hex'))
+    expect(result.queued).toBe(false)
+    expect(result.estimatedAmount).toBe(197.5)
+    expect(invocation(simulatedTx())).toEqual({
       contract: CONTRACT_ID,
       method: 'withdraw',
       argTypes: ['scvI128', 'scvI128'],
@@ -268,7 +280,7 @@ describe('signed transactions', () => {
     expect(vault.toStroops(1)).toBe(10_000_000n)
   })
 
-  it('detects a queued withdrawal from the WithdrawQueued event', async () => {
+  it('detects a queued withdrawal from the return value and withdraw_queued event', async () => {
     const vault = await loadVault()
     const event = new xdr.ContractEvent({
       ext: new xdr.ExtensionPoint(0),
@@ -277,23 +289,24 @@ describe('signed transactions', () => {
       body: new xdr.ContractEventBody(
         0,
         new xdr.ContractEventV0({
-          topics: [nativeToScVal('WithdrawQueued', { type: 'symbol' })],
-          data: nativeToScVal({ position: 3, amount: 5_000_000_000n }),
+          topics: [nativeToScVal('withdraw_queued', { type: 'symbol' })],
+          data: nativeToScVal({ shares_burned: 10_000_000n, usdc_owed: 5_000_000_000n }),
         }),
       ),
     })
     rpcMock.getTransaction.mockResolvedValue({
       status: 'SUCCESS',
-      events: { contractEventsXdr: [[event]] },
+      returnValue: nativeToScVal(0n, { type: 'i128' }),
+      events: { contractEventsXdr: [event.toXDR('base64')] },
     })
 
     const result = await settle(vault.submitWithdraw(500, USER, sign))
     expect(result).toMatchObject({
       hash: simulatedTx().hash().toString('hex'),
       queued: true,
-      position: 3,
       estimatedAmount: 500,
     })
+    expect(result).not.toHaveProperty('position')
     expect(String(result)).toBe(simulatedTx().hash().toString('hex'))
   })
 
@@ -386,7 +399,6 @@ describe('demo mode (no contract configured)', () => {
     })
     await expect(settle(vault.submitWithdraw(500, USER, sign))).resolves.toMatchObject({
       queued: true,
-      position: 1,
     })
   })
 
@@ -521,9 +533,12 @@ describe('view calls', () => {
         const call = op.func.invokeContract()
         const method = call.functionName().toString()
         if (method === 'is_paused') return Promise.resolve(okSimulation(xdr.ScVal.scvBool(true)))
-        if (method === 'get_deposit_lock_expiry') return Promise.resolve(okSimulation(nativeToScVal(1234567890n, { type: 'u64' })))
-        if (method === 'max_transaction_amount') return Promise.resolve(okSimulation(nativeToScVal(1000_0000000n, { type: 'i128' })))
-        if (method === 'get_utilization_bps') return Promise.resolve(okSimulation(nativeToScVal(500n, { type: 'u32' })))
+        if (method === 'get_deposit_lock_expiry')
+          return Promise.resolve(okSimulation(nativeToScVal(1234567890n, { type: 'u64' })))
+        if (method === 'max_transaction_amount')
+          return Promise.resolve(okSimulation(nativeToScVal(1000_0000000n, { type: 'i128' })))
+        if (method === 'get_utilization_bps')
+          return Promise.resolve(okSimulation(nativeToScVal(500n, { type: 'u32' })))
         return Promise.resolve(okSimulation())
       })
 

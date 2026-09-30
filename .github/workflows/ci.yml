@@ -19,11 +19,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Basic validation
-        run: |
-          echo "Basic CI passed :heart:"
-          echo "Build check skipped for velocity - auto-merge handles review"
-          # If you want strict checks later, re-enable bun build / npm build here
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Execute production build check
+        run: bun run build
 
   unit:
     name: unit tests + coverage
@@ -31,11 +33,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        # bun.lock is out of sync with package.json (#600); don't freeze it yet.
-        run: bun install
+        run: bun install --frozen-lockfile
 
       # Fails when src/lib/api.ts or src/wallet/vault.ts drop below 80% line
       # coverage, or src/lib / src/wallet regress (#608). See vitest.config.mts.

@@ -51,7 +51,6 @@ export interface WithdrawPreview {
 export interface WithdrawResult {
   hash: string
   queued: boolean
-  position?: number
   estimatedAmount?: number
   toString(): string
 }
@@ -59,14 +58,12 @@ export interface WithdrawResult {
 export function createWithdrawResult(
   hash: string,
   queued: boolean,
-  position?: number,
   estimatedAmount?: number,
 ): WithdrawResult {
   return {
     hash,
     queued,
-    position,
-    estimatedAmount,
+    ...(estimatedAmount === undefined ? {} : { estimatedAmount }),
     toString() {
       return this.hash
     },
@@ -336,14 +333,17 @@ export interface VaultLimits {
   utilizationBps: number
 }
 
-export async function fetchVaultLimits(sourceAddress: string, network = STELLAR_NETWORK): Promise<VaultLimits> {
+export async function fetchVaultLimits(
+  sourceAddress: string,
+  network = STELLAR_NETWORK,
+): Promise<VaultLimits> {
   const defaults: VaultLimits = {
     paused: false,
     minDeposit: MIN_DEPOSIT_USDC,
     minWithdrawShares: MIN_WITHDRAW_SHARES,
     maxTx: 482,
     lockExpiresAt: 0,
-    utilizationBps: 0
+    utilizationBps: 0,
   }
 
   if (!CONTRACT_ID || offline) {
@@ -355,9 +355,14 @@ export async function fetchVaultLimits(sourceAddress: string, network = STELLAR_
   try {
     const [pausedVal, lockVal, maxTxVal, utilVal] = await Promise.all([
       sorobanSimulate(sourceAddress, 'is_paused', [], network).catch(() => undefined),
-      sorobanSimulate(sourceAddress, 'get_deposit_lock_expiry', [new Address(sourceAddress).toScVal()], network).catch(() => undefined),
+      sorobanSimulate(
+        sourceAddress,
+        'get_deposit_lock_expiry',
+        [new Address(sourceAddress).toScVal()],
+        network,
+      ).catch(() => undefined),
       sorobanSimulate(sourceAddress, 'max_transaction_amount', [], network).catch(() => undefined),
-      sorobanSimulate(sourceAddress, 'get_utilization_bps', [], network).catch(() => undefined)
+      sorobanSimulate(sourceAddress, 'get_utilization_bps', [], network).catch(() => undefined),
     ])
 
     return {
@@ -365,8 +370,10 @@ export async function fetchVaultLimits(sourceAddress: string, network = STELLAR_
       minDeposit: defaults.minDeposit,
       minWithdrawShares: defaults.minWithdrawShares,
       maxTx: maxTxVal !== undefined ? Number(scValToNative(maxTxVal)) / SCALE : defaults.maxTx,
-      lockExpiresAt: lockVal !== undefined ? Number(scValToNative(lockVal)) : defaults.lockExpiresAt,
-      utilizationBps: utilVal !== undefined ? Number(scValToNative(utilVal)) : defaults.utilizationBps
+      lockExpiresAt:
+        lockVal !== undefined ? Number(scValToNative(lockVal)) : defaults.lockExpiresAt,
+      utilizationBps:
+        utilVal !== undefined ? Number(scValToNative(utilVal)) : defaults.utilizationBps,
     }
   } catch (e) {
     return defaults
@@ -450,8 +457,68 @@ const TX_POLL_TIMEOUT_S = 30
 
 export interface TransactionConfirmation {
   status: string
-  resultMetaXdr?: string
   returnValue?: unknown
+  events?: { contractEventsXdr?: unknown[] }
+}
+
+function decodeWithdrawConfirmation(
+  confirmation: TransactionConfirmation,
+  shares: bigint,
+  xdr: typeof import('@stellar/stellar-sdk').xdr,
+  scValToNative: typeof import('@stellar/stellar-sdk').scValToNative,
+): { queued: boolean; estimatedAmount?: number } {
+  let returned: unknown
+  try {
+    const rawReturn = confirmation.returnValue
+    returned =
+      typeof rawReturn === 'bigint' || typeof rawReturn === 'number'
+        ? rawReturn
+        : rawReturn == null
+          ? undefined
+          : scValToNative(rawReturn as Parameters<typeof scValToNative>[0])
+  } catch {
+    returned = undefined
+  }
+
+  const queued = shares > 0n && (returned === 0n || returned === 0)
+  let estimatedAmount =
+    (typeof returned === 'bigint' && returned > 0n) ||
+    (typeof returned === 'number' && returned > 0)
+      ? Number(returned) / SCALE
+      : undefined
+
+  for (const rawEvent of confirmation.events?.contractEventsXdr ?? []) {
+    try {
+      const event =
+        typeof rawEvent === 'string'
+          ? xdr.ContractEvent.fromXDR(rawEvent, 'base64')
+          : (rawEvent as InstanceType<typeof xdr.ContractEvent>)
+      const eventV0 = event.body().v0()
+      const isWithdrawQueued = eventV0.topics().some((topic) => {
+        try {
+          return scValToNative(topic) === 'withdraw_queued'
+        } catch {
+          return false
+        }
+      })
+      if (!isWithdrawQueued) continue
+
+      const data = scValToNative(eventV0.data())
+      const owed =
+        data instanceof Map
+          ? data.get('usdc_owed')
+          : data && typeof data === 'object'
+            ? (data as Record<string, unknown>).usdc_owed
+            : undefined
+      if (typeof owed === 'bigint' || typeof owed === 'number') {
+        estimatedAmount = Number(owed) / SCALE
+      }
+    } catch {
+      // Ignore malformed or unrelated events in the RPC response.
+    }
+  }
+
+  return { queued, estimatedAmount }
 }
 
 class TransactionFailedError extends Error {}
@@ -734,7 +801,7 @@ export async function submitWithdraw(
         const isQueued = amount > 236
         recordTransaction({ hash: demoHash, kind: 'withdraw', status: 'confirmed', amount })
         notifyTransactionConfirmed(demoHash, 'withdraw')
-        resolve(createWithdrawResult(demoHash, isQueued, isQueued ? 1 : undefined, amount))
+        resolve(createWithdrawResult(demoHash, isQueued, amount))
       }, SIMULATED_WITHDRAW_DELAY_MS)
       if (signal) {
         signal.addEventListener('abort', () => {
@@ -787,133 +854,13 @@ export async function submitWithdraw(
     sign,
     amount,
   )
-  let queued = false
-  let position: number | undefined
-  let estimatedAmount = amount
-
-  const inspectEvent = (rawEvt: unknown) => {
-    try {
-      const anyEvt = rawEvt as {
-        event?: () => unknown
-        body?: () => {
-          v0?: () => {
-            topics?: () => unknown[]
-            data?: () => unknown
-          }
-        }
-      }
-      const contractEvt = (typeof anyEvt.event === 'function' ? anyEvt.event() : anyEvt) as {
-        body?: () => {
-          v0?: () => {
-            topics?: () => unknown[]
-            data?: () => unknown
-          }
-        }
-      }
-      const body = typeof contractEvt.body === 'function' ? contractEvt.body() : undefined
-      const v0 = typeof body?.v0 === 'function' ? body.v0() : undefined
-      if (!v0) return
-
-      const topics = typeof v0.topics === 'function' ? (v0.topics() ?? []) : []
-      const topicStrs = topics.map((t) => {
-        try {
-          return String(scValToNative(t as Parameters<typeof scValToNative>[0]))
-        } catch {
-          return ''
-        }
-      })
-
-      if (
-        topicStrs.some((s) => {
-          const lower = s.toLowerCase()
-          return lower.includes('withdrawqueued') || lower.includes('withdraw_queued')
-        })
-      ) {
-        queued = true
-        try {
-          const dataVal = typeof v0.data === 'function' ? v0.data() : undefined
-          if (!dataVal) return
-          const rawData = scValToNative(dataVal as Parameters<typeof scValToNative>[0])
-          if (rawData && typeof rawData === 'object') {
-            const record = rawData as Record<string, unknown>
-            if ('position' in record) position = Number(record.position)
-            if ('amount' in record) estimatedAmount = Number(record.amount) / 1e7
-          } else if (typeof rawData === 'bigint' || typeof rawData === 'number') {
-            position = Number(rawData)
-          }
-        } catch {
-          /* ignore payload parse error */
-        }
-      }
-    } catch {
-      /* ignore event inspect error */
-    }
-  }
-
-  const anyConf = conf as unknown as {
-    resultMetaXdr?: unknown
-    returnValue?: unknown
-    diagnosticEventsXdr?: unknown[]
-    events?: { contractEventsXdr?: unknown[][] }
-  }
-
-  // 1. Inspect contract events array from RPC response
-  if (anyConf.events?.contractEventsXdr && Array.isArray(anyConf.events.contractEventsXdr)) {
-    for (const group of anyConf.events.contractEventsXdr) {
-      if (Array.isArray(group)) {
-        for (const evt of group) inspectEvent(evt)
-      }
-    }
-  }
-
-  // 2. Inspect diagnostic events
-  if (anyConf.diagnosticEventsXdr && Array.isArray(anyConf.diagnosticEventsXdr)) {
-    for (const diag of anyConf.diagnosticEventsXdr) inspectEvent(diag)
-  }
-
-  // 3. Inspect resultMetaXdr (both parsed object and base64 string)
-  if (anyConf.resultMetaXdr) {
-    try {
-      let meta: unknown = anyConf.resultMetaXdr
-      if (typeof meta === 'string') {
-        meta = xdr.TransactionMeta.fromXDR(meta, 'base64')
-      }
-      const typedMeta = meta as {
-        v3?: () => { sorobanMeta?: () => { events?: () => unknown[] } }
-        switch?: () => number
-        value?: () => { sorobanMeta?: () => { events?: () => unknown[] } }
-      }
-      const v3 =
-        typedMeta.v3?.() ||
-        (typedMeta.switch?.() === 3 || typedMeta.switch?.() === 4 ? typedMeta.value?.() : null)
-      const events = v3?.sorobanMeta?.()?.events?.() ?? []
-      for (const evt of events) inspectEvent(evt)
-    } catch {
-      /* ignore meta parse error */
-    }
-  }
-
-  // 4. Inspect return value if contract returns QueuedClaim struct or status
-  if (anyConf.returnValue) {
-    try {
-      const ret = scValToNative(anyConf.returnValue as Parameters<typeof scValToNative>[0])
-      if (ret && typeof ret === 'object') {
-        const record = ret as Record<string, unknown>
-        if ('queued' in record && Boolean(record.queued)) queued = true
-        if ('position' in record) position = Number(record.position)
-        if ('amount' in record) estimatedAmount = Number(record.amount) / 1e7
-      }
-    } catch {
-      /* ignore return value parse error */
-    }
-  }
-
-  const result = createWithdrawResult(
-    hash,
-    queued,
-    position ?? (queued ? 1 : undefined),
-    estimatedAmount,
+  const { queued, estimatedAmount } = decodeWithdrawConfirmation(
+    conf,
+    BigInt(shares),
+    xdr,
+    scValToNative,
   )
+  const result = createWithdrawResult(hash, queued, estimatedAmount)
   notifyTransactionConfirmed(hash, 'withdraw')
   return result
 }
