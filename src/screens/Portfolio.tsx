@@ -4,13 +4,13 @@ import { TransactionPendingError } from '../wallet/transactions'
 
 import { memo, useState, useEffect, useCallback, type CSSProperties, type ReactNode } from 'react'
 import Link from 'next/link'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Button, StatBlock, LiquidityMeter, Card, AddressChip, useToast } from '../components'
 import { Helio } from '../brand/Helio'
 import { useWallet } from '../wallet/WalletProvider'
 import { getPendingClaims, removePendingClaim, type PendingClaim } from '../wallet/pendingClaims'
 import { submitClaim } from '../wallet/vault'
-import { formatDecimal } from '../lib/format'
+import { formatDate, formatDecimal } from '../lib/format'
 import { OnChainPosition } from './OnChainPosition'
 import { usePortfolio } from '../hooks/usePortfolio'
 
@@ -33,6 +33,7 @@ export interface PortfolioProps {
 
 export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: PortfolioProps) {
   const t = useTranslations('Portfolio')
+  const locale = useLocale()
   const { connected, connect, address, sign } = useWallet()
   const { toast } = useToast()
 
@@ -350,7 +351,7 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
                       color: 'var(--ink-60)',
                     }}
                   >
-                    {new Date(claim.timestamp).toLocaleDateString()}
+                    {formatDate(claim.timestamp, locale)}
                   </span>
                   <AddressChip value={claim.hash} label="transaction hash" />
                 </div>

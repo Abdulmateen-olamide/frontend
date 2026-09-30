@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, type CSSProperties, type ReactNode } from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import { Button, AmountInput, useToast } from '../components'
 import { Helio } from '../brand/Helio'
 import { submitDeposit } from '../wallet/vault'
@@ -16,7 +16,14 @@ import { reportTransactionFailure } from '../lib/errorReporting'
 import { isNetworkMismatchError } from '../wallet/networkGuard'
 import { useWallet } from '../wallet/WalletProvider'
 import { selectPoolSummary } from '../state/selectors'
-import { roundToCents, formatDecimal, formatSharePrice, parseAmount } from '../lib/format'
+import {
+  roundToCents,
+  formatDecimal,
+  formatSharePrice,
+  parseAmount,
+  formatDateTime,
+  formatTime,
+} from '../lib/format'
 import { projectedReturn } from '../lib/bondUtils'
 import { useDepositGuard } from '../hooks/useDepositGuard'
 import { RecurringInvestmentOptions } from '../components/RecurringInvestmentOptions'
@@ -42,6 +49,7 @@ const strong = (chunks: ReactNode) => <b style={{ color: 'var(--ink)' }}>{chunks
 export function Deposit({ onDone }: DepositProps) {
   const t = useTranslations('Deposit')
   const tErr = useTranslations('ContractErrors')
+  const locale = useLocale()
   const { toast } = useToast()
   const { address, sign } = useWallet()
   // Flat selector — pool figures in one level, no nested-state drilling.
@@ -422,7 +430,7 @@ export function Deposit({ onDone }: DepositProps) {
               <Row k={t('rowPay')} v={`${formatDecimal(n, 2)} USDC`} />
               <Row k={t('rowReceive')} v={`≈ ${formatDecimal(n / price, 4)} HBS`} />
               <Row k={t('rowPrice')} v={formatSharePrice(price)} />
-              <Row k="Price fetched" v={priceFetchedAt.toLocaleString()} />
+              <Row k="Price fetched" v={formatDateTime(priceFetchedAt, locale)} />
               <Row k="Network fee" v={feeLabel} />
             </div>
             <div
@@ -445,7 +453,7 @@ export function Deposit({ onDone }: DepositProps) {
               >
                 {isRateStale
                   ? `Rate updated ${rateAgeSeconds}s ago — may be outdated. Refresh before confirming.`
-                  : `Live rate — updated ${rateAgeSeconds}s ago at ${priceFetchedAt.toLocaleTimeString()}`}
+                  : `Live rate — updated ${rateAgeSeconds}s ago at ${formatTime(priceFetchedAt, locale)}`}
               </p>
               <button
                 type="button"
