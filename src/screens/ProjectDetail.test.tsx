@@ -25,7 +25,7 @@ const mockDetail: ProjectDetailData = {
   creator: {
     name: 'Helio Energy',
     verified: true,
-    since: '2024',
+    since: '2025',
   },
   story: 'Community solar project.',
   scoreHistory: { credit: [], green: [] },

@@ -1,39 +1,81 @@
 # API Reference — Heliobond Backend Client
 
-This document is the developer reference for [`src/lib/api.ts`](src/lib/api.ts),
-the HTTP client that connects the frontend to the Heliobond backend REST API.
+This document is the developer reference for the HTTP client that connects the
+frontend to the Heliobond backend REST API:
 
-Every function falls back to bundled fixture data when `NEXT_PUBLIC_API_URL` is
-not set, so the app works out of the box without a running backend.
+- [`src/lib/apiClient.ts`](src/lib/apiClient.ts) — the typed `/v1` client.
+- [`src/lib/api.ts`](src/lib/api.ts) — app-facing functions with demo fallbacks.
+- [`src/app/api/backend/[...path]/route.ts`](src/app/api/backend/[...path]/route.ts) —
+  the server-side proxy that keeps the API key out of the browser.
+
+Every function falls back to bundled fixture data when no backend is configured,
+so the app works out of the box without a running backend.
 
 ---
 
 ## Table of Contents
 
 1. [Environment configuration](#environment-configuration)
-2. [Response types](#response-types)
-3. [Endpoints](#endpoints)
+2. [Authentication](#authentication)
+3. [Response types](#response-types)
+4. [Endpoints](#endpoints)
    - [getProjects](#getprojects)
    - [getProjectsPaginated](#getprojectspaginated)
    - [getProject](#getproject)
-   - [createInvestment](#createinvestment)
    - [getPriceHistory](#getpricehistory)
+   - [fetchBackendPortfolio](#fetchbackendportfolio)
    - [biometricLogin](#biometriclogin)
-4. [Error handling](#error-handling)
-5. [Demo / fixture fallback](#demo--fixture-fallback)
-6. [Usage examples](#usage-examples)
+5. [Error handling](#error-handling)
+6. [Demo / fixture fallback](#demo--fixture-fallback)
+7. [Usage examples](#usage-examples)
 
 ---
 
 ## Environment configuration
 
-| Variable                | Required | Example                 | Purpose                                                                                                                |
-| ----------------------- | -------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_API_URL`   | No       | `http://localhost:3001` | Backend base URL. When absent, the app runs in demo mode and uses local fixture data. No HTTP requests are made.       |
-| `NEXT_PUBLIC_DEMO_MODE` | No       | `true`                  | Force demo mode even when `NEXT_PUBLIC_API_URL` is set. Useful for testing or staging previews without a live backend. |
+| Variable                | Required | Example                 | Purpose                                                                                                 |
+| ----------------------- | -------- | ----------------------- | ------------------------------------------------------------------------------------------------------- |
+| `HELIOBOND_API_URL`     | No       | `http://localhost:3001` | Backend base URL, read **server-side only**. Falls back to `NEXT_PUBLIC_API_URL` when unset.            |
+| `HELIOBOND_API_KEY`     | No       | `hb_live_…`             | API key sent as `X-API-Key`. **Server-side only** — never expose it through a `NEXT_PUBLIC_*` variable. |
+| `NEXT_PUBLIC_API_URL`   | No       | `http://localhost:3001` | Public base URL, used for the auth endpoints and as a fallback for `HELIOBOND_API_URL`.                 |
+| `NEXT_PUBLIC_DEMO_MODE` | No       | `true`                  | Force demo mode even when a backend is configured.                                                      |
 
-Copy `.env.example` to `.env.local` and set `NEXT_PUBLIC_API_URL` to point at
-your local or staging backend before running `bun run dev`.
+Copy `.env.example` to `.env.local`, then set `HELIOBOND_API_URL` and
+`HELIOBOND_API_KEY` to point at your local or staging backend before running
+`bun run dev`.
+
+---
+
+## Authentication
+
+Every `/v1` backend route requires an API key on the `X-API-Key` header. A
+secret cannot live in a `NEXT_PUBLIC_*` variable — Next.js inlines those into
+the client bundle, so anyone using the app could read the key and exhaust the
+rate limit.
+
+The browser therefore never talks to the backend directly. It calls the
+same-origin route handler, which attaches the key on the server:
+
+```
+browser  ──▶  /api/backend/v1/projects   (Next.js route handler)
+                     │  adds X-API-Key server-side
+                     ▼
+               HELIOBOND_API_URL/v1/projects   (backend)
+```
+
+Server components skip the proxy and call the backend directly, still with the
+key attached server-side.
+
+The proxy forwards a fixed allowlist of read-only endpoints and rejects anything
+else without contacting the backend:
+
+| Allowed upstream path      | Used by                 |
+| -------------------------- | ----------------------- |
+| `/v1/projects`             | `getProjects`, Explore  |
+| `/v1/projects/:id`         | `getProject`            |
+| `/v1/projects/:id/history` | `getPriceHistory`       |
+| `/v1/portfolio/:address`   | `fetchBackendPortfolio` |
+| `/v1/forecast/:id`         | forecasts               |
 
 ---
 
@@ -62,18 +104,24 @@ interface ProjectWithDetail {
 
 Returned by [`getProject`](#getproject).
 
-### `Investment`
+### `BackendProject`
 
 ```ts
-interface Investment {
-  id: number // Server-assigned investment ID
-  projectId: number // The project invested in
-  amount: number // USDC amount
-  projectUrl: string // Canonical URL, e.g. "/projects/42"
+interface BackendProject {
+  id: number
+  credit_quality: number // Credit Quality score, 0–100
+  green_impact: number // Green Impact score, 0–100
+  power_output_kw: number
+  efficiency_pct: number
+  forest_density_pct: number
+  ndvi_score: number
+  timestamp: number // Unix milliseconds
 }
 ```
 
-Returned by [`createInvestment`](#createinvestment).
+The shape the backend returns. [`mapBackendProject`](#mapping-backend-projects)
+converts it into the app's `Project`, keeping names and funding copy from the
+local project so a live backend only replaces the scores.
 
 ### `PaginatedProjectsResponse`
 
@@ -113,7 +161,7 @@ async function getProjects(): Promise<Project[]>
 
 Fetches all bond projects.
 
-**Backend endpoint:** `GET /projects`
+**Backend endpoint:** `GET /v1/projects?cursor=0&limit=100`
 
 **Returns:** Array of `Project` objects.
 
@@ -147,7 +195,11 @@ Fetches a paginated slice of bond projects. Use this for the Explore screen
 initial load — it reduces time-to-interactive from 3–5 s down to sub-second
 by deferring off-screen projects.
 
-**Backend endpoint:** `GET /projects?page={page}&limit={pageSize}`
+**Backend endpoint:** `GET /v1/projects?cursor={(page-1)*pageSize}&limit={pageSize}`
+
+The backend paginates with a cursor, so the 1-indexed page number is translated
+into an offset. `hasMore` is derived from whether the response carried a `cursor`
+for the next page.
 
 **Parameters:**
 
@@ -161,10 +213,8 @@ by deferring off-screen projects.
 **Throws:** `ApiError` on network failures, HTTP errors, or timeouts (after 8 seconds).
 
 **Demo fallback:** Slices `selectProjects()` with the same pagination math.
-Handles both paginated API responses (`{ projects, total, page, ... }`) and
-legacy flat-array responses from older backend versions. **On-chain priority:**
-If a project registry contract is configured, data is read from the Stellar
-blockchain first.
+**On-chain priority:** If a project registry contract is configured, data is
+read from the Stellar blockchain first.
 
 **Example:**
 
@@ -190,7 +240,7 @@ async function getProject(id: number): Promise<ProjectWithDetail | null>
 
 Fetches a single project with its full detail record.
 
-**Backend endpoint:** `GET /projects/:id`
+**Backend endpoint:** `GET /v1/projects/:id`
 
 **Parameters:**
 
@@ -198,7 +248,8 @@ Fetches a single project with its full detail record.
 | ----- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `id`  | `number` | Must be a positive integer (`id >= 1`). Non-integer, negative, zero, or `NaN` ids return `null` immediately without a network call. |
 
-**Returns:** `ProjectWithDetail` or `null` when the project is not found.
+**Returns:** `ProjectWithDetail`, or `null` when the backend has no such project
+(a `404` resolves to `null` rather than raising).
 
 **Throws:** `ApiError` on network failures, HTTP errors, or timeouts (after 8 seconds).
 
@@ -227,60 +278,27 @@ await getProject(1.5) // null
 
 ---
 
-### `createInvestment`
+### Creating an investment
+
+There is no client method for this, and that is deliberate. The backend never
+implemented `POST /investments`, and a Stellar deposit transaction is the source
+of truth for an investment — recording one server-side as well would create a
+second, reconcilable copy that can disagree with the chain. Use the vault
+helpers in [`src/wallet/vault.ts`](src/wallet/vault.ts) to submit the deposit.
+
+---
+
+### `mapBackendProjects`
 
 ```ts
-async function createInvestment(input: { projectId: number; amount: number }): Promise<Investment>
+function mapBackendProject(raw: BackendProject, fallback?: Project): Project
 ```
 
-Creates a new investment record on the backend.
-
-**Backend endpoint:** `POST /investments`
-
-**Request body:**
-
-```json
-{
-  "projectId": 1,
-  "amount": 100
-}
-```
-
-**Parameters:**
-
-| Field       | Type     | Constraints                                                        |
-| ----------- | -------- | ------------------------------------------------------------------ |
-| `projectId` | `number` | Must be a positive integer (`>= 1`). Throws on invalid input.      |
-| `amount`    | `number` | Must be a positive finite number (`> 0`). Throws on invalid input. |
-
-**Returns:** `Investment`
-
-**Throws:**
-
-- `Error('Invalid investment input')` for invalid input (non-integer `projectId`,
-  `projectId < 1`, non-finite `amount`, or `amount <= 0`)
-- `ApiError` on network failures, HTTP errors, or timeouts (after 8 seconds)
-
-Input is validated _before_ any network call, so invalid inputs never reach
-the backend.
-
-**Demo fallback:** Returns a mock `Investment` with a random `id`, preserving
-`projectId` and `amount`. The `projectUrl` field is always `/projects/:id`.
-
-**Example:**
-
-```ts
-import { createInvestment } from '@/lib/api'
-
-// Valid investment
-const investment = await createInvestment({ projectId: 3, amount: 250 })
-// { id: 84712, projectId: 3, amount: 250, projectUrl: '/projects/3' }
-
-// Invalid — throws before any HTTP call
-await createInvestment({ projectId: 0, amount: 100 }) // throws
-await createInvestment({ projectId: 1, amount: -50 }) // throws
-await createInvestment({ projectId: 1.5, amount: 100 }) // throws
-```
+Converts a backend row into the app's `Project`. The backend reports scores and
+telemetry; names, locations and funding copy stay from the local project, so
+turning on a live backend replaces the scores without blanking out the screen.
+`verifiedMetadata` is `false` for backend data, since it is not verified
+on-chain.
 
 ---
 
@@ -290,9 +308,15 @@ await createInvestment({ projectId: 1.5, amount: 100 }) // throws
 async function getPriceHistory(projectId: number): Promise<PricePoint[]>
 ```
 
-Fetches 30-day bond price and yield history for a project.
+Fetches a project's history as chart points.
 
-**Backend endpoint:** `GET /projects/:projectId/price-history`
+**Backend endpoint:** `GET /v1/projects/:projectId/history`
+
+The backend reports impact-score snapshots, not share prices, so
+[`historyToPricePoints`](src/lib/apiClient.ts) derives both the price and the
+yield from the green-impact score. This replaces the mocked
+`/price-history` endpoint the backend never implemented. Combine it with
+on-chain share-price snapshots when exact pricing is needed.
 
 **Parameters:**
 
@@ -301,7 +325,7 @@ Fetches 30-day bond price and yield history for a project.
 | `projectId` | `number` | Project ID  |
 
 **Returns:** Array of `PricePoint` objects sorted in ascending chronological
-order (oldest first). The backend response is re-sorted if necessary.
+order (oldest first).
 
 **Throws:** `ApiError` on network failures, HTTP errors, or timeouts (after 8 seconds).
 
@@ -324,6 +348,25 @@ const history = await getPriceHistory(2)
 // Feed directly into PriceHistoryChart:
 <PriceHistoryChart data={history} />
 ```
+
+---
+
+### `fetchBackendPortfolio`
+
+```ts
+async function fetchBackendPortfolio(address: string): Promise<BackendPortfolio>
+```
+
+Fetches the on-chain vault position and indexed event history for an address.
+
+**Backend endpoint:** `GET /v1/portfolio/{address}`
+
+**Returns:** `BackendPortfolio` — shares, USDC value, claimable yield, share of
+pool, total deposited, and the address's vault events.
+
+The Soroban vault remains the source of truth for balances; this endpoint is the
+backend's indexed view of the same data and is only used when a backend is
+configured.
 
 ---
 
@@ -373,12 +416,12 @@ The API client reads project data from three sources in the following priority o
    Stellar ProjectRegistry contract is deployed and configured), project data
    is read directly from the blockchain via Stellar RPC. This is the highest-
    trust path and bypasses HTTP entirely.
-2. **Demo fixtures** — If `NEXT_PUBLIC_API_URL` is **not** set (or
+2. **Demo fixtures** — If no backend is configured (or
    `NEXT_PUBLIC_DEMO_MODE=true` is explicitly enabled), all functions return
    deterministic mock data from `src/data.ts` and `src/data/projectDetails.ts`.
    No HTTP requests are made. A "Demo data" badge appears in the UI when
    `shouldShowDemoBadge()` returns `true`.
-3. **HTTP backend** — If `NEXT_PUBLIC_API_URL` is set and demo mode is off,
+3. **HTTP backend** — If `HELIOBOND_API_URL` is set and demo mode is off,
    the client calls the configured backend. **Failures throw `ApiError`** —
    they are not silently swallowed.
 
@@ -419,7 +462,7 @@ const projects = await getProjects()
 
 ### NEXT_PUBLIC_DEMO_MODE
 
-To force demo mode even when `NEXT_PUBLIC_API_URL` is set (useful for testing
+To force demo mode even when a backend is configured (useful for testing
 or staging previews without a live backend), set:
 
 ```bash
@@ -458,7 +501,7 @@ For mapping backend error codes to user-facing strings, see
 
 ## Demo / fixture fallback
 
-When `NEXT_PUBLIC_API_URL` is **not set** (or is empty), the app runs in **demo
+When `HELIOBOND_API_URL` is **not set** (or is empty), the app runs in **demo
 mode**. In this mode:
 
 - **No HTTP requests are made** — every API function returns deterministic
@@ -476,12 +519,12 @@ Project Detail, and Deposit screens.
 
 ### Demo mode vs. HTTP failures
 
-**When `NEXT_PUBLIC_API_URL` is set**, demo mode is **off**. HTTP failures
+**When a backend is configured**, demo mode is **off**. HTTP failures
 (timeouts, 5xx errors, network errors) **throw `ApiError`** and do not fall
 back to fixtures. The caller must handle the error and show appropriate UI
 (loading state, retry button, error message).
 
-To force demo mode even when `NEXT_PUBLIC_API_URL` is set, use:
+To force demo mode even when a backend is configured, use:
 
 ```bash
 NEXT_PUBLIC_DEMO_MODE=true
@@ -524,19 +567,22 @@ export default async function Page({ params }: { params: { id: string } }) {
 
 ### Creating an investment
 
-```ts
-import { createInvestment, ApiError } from '@/lib/api'
+Investments happen on-chain. Build and sign the deposit transaction with the
+vault helpers; the backend has no investment endpoint to call.
 
-async function handleDeposit(projectId: number, amount: number) {
+```ts
+import { buildDepositTransaction, submitTransaction } from '@/wallet/vault'
+
+async function handleDeposit(amount: number) {
   try {
-    const investment = await createInvestment({ projectId, amount })
-    router.push(investment.projectUrl)
+    const xdr = await buildDepositTransaction({ address, amount })
+    const signed = await sign(xdr)
+    const { hash } = await submitTransaction(signed)
+    router.push(`/portfolio?tx=${hash}`)
   } catch (err) {
-    if (err instanceof Error && err.message === 'Invalid investment input') {
-      setFormError('Please enter a valid amount and project ID.')
-    } else if (err instanceof ApiError) {
+    if (err instanceof ApiError) {
       setFormError('Network error. Please check your connection and try again.')
-      console.error('Investment creation failed:', err.status, err.message)
+      console.error('Deposit failed:', err.status, err.message)
     } else {
       throw err
     }
