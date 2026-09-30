@@ -399,6 +399,42 @@ export async function fetchPortfolio(account: string): Promise<OnChainPortfolio>
   }
 }
 
+/**
+ * Read claimable_yield(account) — unclaimed yield in USDC for an account.
+ * Returns 0 when NEXT_PUBLIC_VAULT_CONTRACT_ID is not set; throws on read errors.
+ */
+export async function fetchClaimableYield(
+  account: string,
+  network = STELLAR_NETWORK,
+): Promise<number> {
+  if (!CONTRACT_ID) return 0
+  if (offline) throw new Error('Stellar node is offline')
+  const { Address, scValToNative } = await import('@stellar/stellar-sdk')
+  try {
+    const retval = await sorobanSimulate(
+      account,
+      'claimable_yield',
+      [new Address(account).toScVal()],
+      network,
+    )
+    return Number(scValToNative(retval)) / SCALE
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    const isProgrammingError =
+      msg.includes('Invalid address') ||
+      msg.includes('invalid address') ||
+      msg.includes('Malformed') ||
+      msg.includes('malformed') ||
+      msg.includes('Contract not found') ||
+      msg.includes('contract not found') ||
+      msg.includes('not a valid')
+    if (!isProgrammingError) {
+      setOffline(true)
+    }
+    throw e instanceof Error ? e : new Error(msg)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Transaction helpers
 // ---------------------------------------------------------------------------

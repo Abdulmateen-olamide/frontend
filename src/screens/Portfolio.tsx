@@ -7,12 +7,12 @@ import Link from 'next/link'
 import { useTranslations } from 'next-intl'
 import { Button, StatBlock, LiquidityMeter, Card, AddressChip, useToast } from '../components'
 import { Helio } from '../brand/Helio'
-import { selectActivity, selectYou } from '../state/selectors'
 import { useWallet } from '../wallet/WalletProvider'
 import { getPendingClaims, removePendingClaim, type PendingClaim } from '../wallet/pendingClaims'
 import { submitClaim } from '../wallet/vault'
 import { formatDecimal } from '../lib/format'
 import { OnChainPosition } from './OnChainPosition'
+import { usePortfolio } from '../hooks/usePortfolio'
 
 const MemoizedHelio = memo(Helio)
 
@@ -22,6 +22,9 @@ const MemoizedLiquidityMeter = memo(LiquidityMeter)
  * Portfolio — calm dashboard. Headline value with delta since deposit, the
  * personal mini-Helio, and three always-visible figures including the permanent
  * "Available to withdraw now" liquidity truth.
+ *
+ * Driven by the connected wallet's live Soroban position (get_portfolio + claimable_yield)
+ * with graceful fallback to demo fixtures when disconnected or in demo mode. (#589)
  */
 export interface PortfolioProps {
   onWithdraw: () => void
@@ -32,9 +35,10 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
   const t = useTranslations('Portfolio')
   const { connected, connect, address, sign } = useWallet()
   const { toast } = useToast()
-  // Flat selectors — one level, no drilling through the nested state shape.
-  const you = selectYou()
-  const activity = selectActivity()
+
+  // Drive portfolio metrics dynamically from the connected wallet
+  const { portfolio, you, activity, loading, error, refresh } = usePortfolio()
+
   const risk = { score: you.riskScore, level: you.riskLevel }
   const referralLink = you.referralLink
 
@@ -110,8 +114,69 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
     )
   }
 
+  const integerVal = Math.floor(you.value)
+  const decimalPart = (you.value % 1).toFixed(2).slice(2)
+
   return (
     <main id="main-content" style={{ maxWidth: 1080, margin: '0 auto', padding: '48px 32px 80px' }}>
+      {/* On-chain loading state banner */}
+      {loading && !portfolio && (
+        <Card data-testid="portfolio-loading" style={{ padding: 22, marginBottom: 28 }}>
+          <p
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: 'var(--type-small)',
+              color: 'var(--ink-60)',
+              margin: 0,
+            }}
+          >
+            Reading your portfolio position from Soroban…
+          </p>
+        </Card>
+      )}
+
+      {/* On-chain error state banner */}
+      {error && (
+        <Card data-testid="portfolio-error" style={{ padding: 22, marginBottom: 28 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <p
+              role="alert"
+              style={{
+                fontFamily: 'var(--font-body)',
+                fontSize: 'var(--type-small)',
+                color: 'var(--ember)',
+                margin: 0,
+              }}
+            >
+              {error}
+            </p>
+            <Button variant="secondary" size="sm" onClick={refresh}>
+              Retry
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* On-chain empty holdings state banner (0 shares) */}
+      {portfolio && portfolio.shares === 0 && portfolio.totalDeposited === 0 && (
+        <Card data-testid="portfolio-empty" style={{ padding: 22, marginBottom: 28 }}>
+          <h3 style={cardTitle}>No active vault position found</h3>
+          <p
+            style={{
+              fontFamily: 'var(--font-body)',
+              fontSize: 'var(--type-small)',
+              color: 'var(--ink-60)',
+              margin: '4px 0 16px',
+            }}
+          >
+            Your connected wallet has not deposited into this green-bond vault yet.
+          </p>
+          <Button variant="primary" onClick={onDeposit}>
+            Make your first deposit
+          </Button>
+        </Card>
+      )}
+
       <div
         style={{
           display: 'flex',
@@ -126,14 +191,16 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
           <div className="hb-eyebrow" style={{ marginBottom: 14 }}>
             {t('eyebrow')}
           </div>
-          <StatBlock
-            label={t('currentValue')}
-            value={`$${Math.floor(you.value).toLocaleString('en-US')}`}
-            decimals={`.${String(you.value).split('.')[1] ?? '00'}`}
-            delta={`+$${you.deltaAbs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${you.deltaPct}%) ${t('sinceDeposit')}`}
-            size="lg"
-            stackOnMobile
-          />
+          <div data-testid="portfolio-value">
+            <StatBlock
+              label={t('currentValue')}
+              value={`$${integerVal.toLocaleString('en-US')}`}
+              decimals={`.${decimalPart}`}
+              delta={`+$${you.deltaAbs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${you.deltaPct}%) ${t('sinceDeposit')}`}
+              size="lg"
+              stackOnMobile
+            />
+          </div>
           <p
             style={{
               fontFamily: 'var(--font-body)',
@@ -162,10 +229,24 @@ export const Portfolio = memo(function Portfolio({ onWithdraw, onDeposit }: Port
       {/* three always-visible figures */}
       <div className="hb-figures-grid" style={{ margin: '28px 0' }}>
         <Card style={{ padding: 22 }}>
-          <StatBlock label={t('hbsHeld')} value="24,041" decimals=".2310" size="md" />
+          <div data-testid="portfolio-shares">
+            <StatBlock
+              label={t('hbsHeld')}
+              value={Math.floor(you.hbs).toLocaleString('en-US')}
+              decimals={`.${(you.hbs % 1).toFixed(4).slice(2)}`}
+              size="md"
+            />
+          </div>
         </Card>
         <Card style={{ padding: 22 }}>
-          <StatBlock label={t('poolShare')} value="0.49" unit="%" size="md" />
+          <div data-testid="portfolio-poolshare">
+            <StatBlock
+              label={t('poolShare')}
+              value={formatDecimal(you.poolSharePct, 2)}
+              unit="%"
+              size="md"
+            />
+          </div>
         </Card>
         <Card style={{ padding: 22 }}>
           <MemoizedLiquidityMeter liquid={236} total={482} currency="$" showExplanation={false} />
