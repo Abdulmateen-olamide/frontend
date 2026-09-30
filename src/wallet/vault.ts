@@ -153,6 +153,26 @@ export function onOfflineChange(listener: (offline: boolean) => void): () => voi
   }
 }
 
+/**
+ * True only for a transport-level failure: a timeout or a fetch/network error.
+ * That is the *whole* meaning of "offline" — a Soroban simulate result (e.g. a
+ * contract panic), a malformed request, or a bad address is not a connectivity
+ * problem and must never flip the global offline flag (issue #624).
+ */
+function isTransportError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error)
+  return (
+    msg.includes('timed out') ||
+    msg.includes('timeout') ||
+    msg.includes('Failed to fetch') ||
+    msg.includes('NetworkError') ||
+    msg.includes('fetch failed') ||
+    msg.includes('ECONNREFUSED') ||
+    msg.includes('ETIMEDOUT') ||
+    msg.includes('ENOTFOUND')
+  )
+}
+
 /** Reject if a Stellar network call takes longer than RPC_TIMEOUT_MS. */
 async function withTimeout<T>(promise: Promise<T>, message: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -203,22 +223,10 @@ async function sorobanSimulate(
     'Stellar RPC timed out during simulation',
   )) as { error?: string; result?: { retval: unknown } }
   if ('error' in result) {
-    const error = result.error
-    // Distinguish programming errors (bad address, bad args) from network errors
-    // Invalid address/contract errors should NOT mark the app as offline
-    const isProgrammingError =
-      typeof error === 'string' &&
-      (error.includes('Invalid address') ||
-        error.includes('invalid address') ||
-        error.includes('Malformed') ||
-        error.includes('malformed') ||
-        error.includes('Contract not found') ||
-        error.includes('contract not found') ||
-        error.includes('not a valid'))
-    if (isProgrammingError) {
-      throw new Error(`Soroban simulate error: ${error}`)
-    }
-    throw new Error(`Soroban simulate error: ${error}`)
+    // A simulate error is a chain-level outcome (a contract panic, a malformed
+    // request, ...), never a connectivity failure — surface it without letting
+    // callers flip the offline flag (issue #624).
+    throw new Error(`Soroban simulate error: ${result.error}`)
   }
   if (!result.result) throw new Error('Soroban simulate returned no result')
   return result.result.retval as XdrTypes.ScVal
@@ -235,7 +243,6 @@ export async function fetchSharePrice(
   network = STELLAR_NETWORK,
 ): Promise<string> {
   if (!CONTRACT_ID) throw new Error('NEXT_PUBLIC_VAULT_CONTRACT_ID not set')
-  if (offline) return formatSharePrice(cachedSharePrice)
   const { scValToNative, nativeToScVal } = await import('@stellar/stellar-sdk')
   try {
     const oneShare = nativeToScVal(toStroops(1), { type: 'i128' })
@@ -244,20 +251,10 @@ export async function fetchSharePrice(
     cachedSharePrice = assetsPerShare > 0 ? assetsPerShare : 1
     return formatSharePrice(cachedSharePrice)
   } catch (e) {
-    // Don't mark offline for programming errors (invalid address, bad contract, etc.)
-    const msg = e instanceof Error ? e.message : String(e)
-    const isProgrammingError =
-      msg.includes('Invalid address') ||
-      msg.includes('invalid address') ||
-      msg.includes('Malformed') ||
-      msg.includes('malformed') ||
-      msg.includes('Contract not found') ||
-      msg.includes('contract not found') ||
-      msg.includes('not a valid')
-    if (!isProgrammingError) {
-      setOffline(true)
-    }
-    return formatSharePrice(cachedSharePrice)
+    // Only a transport failure means "offline"; rethrow otherwise/successively so
+    // callers keep `fetchedAt` at the last real success (issue #624).
+    if (isTransportError(e)) setOffline(true)
+    throw e instanceof Error ? e : new Error(String(e))
   }
 }
 
@@ -270,26 +267,14 @@ export async function fetchTotalAssets(
   network = STELLAR_NETWORK,
 ): Promise<number> {
   if (!CONTRACT_ID) throw new Error('NEXT_PUBLIC_VAULT_CONTRACT_ID not set')
-  if (offline) return cachedTotalAssets ?? 0
   const { scValToNative } = await import('@stellar/stellar-sdk')
   try {
     const retval = await sorobanSimulate(sourceAddress, 'total_assets', [], network)
     cachedTotalAssets = Number(scValToNative(retval)) / SCALE
     return cachedTotalAssets
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    const isProgrammingError =
-      msg.includes('Invalid address') ||
-      msg.includes('invalid address') ||
-      msg.includes('Malformed') ||
-      msg.includes('malformed') ||
-      msg.includes('Contract not found') ||
-      msg.includes('contract not found') ||
-      msg.includes('not a valid')
-    if (!isProgrammingError) {
-      setOffline(true)
-    }
-    return cachedTotalAssets ?? 0
+    if (isTransportError(e)) setOffline(true)
+    throw e instanceof Error ? e : new Error(String(e))
   }
 }
 
@@ -302,25 +287,13 @@ export async function fetchUtilizationBps(
   network = STELLAR_NETWORK,
 ): Promise<number> {
   if (!CONTRACT_ID) return 0
-  if (offline) return 0
   const { scValToNative } = await import('@stellar/stellar-sdk')
   try {
     const retval = await sorobanSimulate(sourceAddress, 'get_utilization_bps', [], network)
     return Number(scValToNative(retval))
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    const isProgrammingError =
-      msg.includes('Invalid address') ||
-      msg.includes('invalid address') ||
-      msg.includes('Malformed') ||
-      msg.includes('malformed') ||
-      msg.includes('Contract not found') ||
-      msg.includes('contract not found') ||
-      msg.includes('not a valid')
-    if (!isProgrammingError) {
-      setOffline(true)
-    }
-    return 0
+    if (isTransportError(e)) setOffline(true)
+    throw e instanceof Error ? e : new Error(String(e))
   }
 }
 
@@ -401,7 +374,6 @@ export interface OnChainPortfolio {
  */
 export async function fetchPortfolio(account: string): Promise<OnChainPortfolio> {
   if (!CONTRACT_ID) throw new Error('NEXT_PUBLIC_VAULT_CONTRACT_ID not set')
-  if (offline) throw new Error('Stellar node is offline')
   const { Address, scValToNative } = await import('@stellar/stellar-sdk')
   const retval = await sorobanSimulate(account, 'get_portfolio', [new Address(account).toScVal()])
   const raw = scValToNative(retval) as Record<string, bigint | number>
@@ -424,7 +396,6 @@ export async function fetchClaimableYield(
   network = STELLAR_NETWORK,
 ): Promise<number> {
   if (!CONTRACT_ID) return 0
-  if (offline) throw new Error('Stellar node is offline')
   const { Address, scValToNative } = await import('@stellar/stellar-sdk')
   try {
     const retval = await sorobanSimulate(
@@ -435,19 +406,8 @@ export async function fetchClaimableYield(
     )
     return Number(scValToNative(retval)) / SCALE
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    const isProgrammingError =
-      msg.includes('Invalid address') ||
-      msg.includes('invalid address') ||
-      msg.includes('Malformed') ||
-      msg.includes('malformed') ||
-      msg.includes('Contract not found') ||
-      msg.includes('contract not found') ||
-      msg.includes('not a valid')
-    if (!isProgrammingError) {
-      setOffline(true)
-    }
-    throw e instanceof Error ? e : new Error(msg)
+    if (isTransportError(e)) setOffline(true)
+    throw e instanceof Error ? e : new Error(String(e))
   }
 }
 
@@ -526,6 +486,29 @@ function decodeWithdrawConfirmation(
 
 class TransactionFailedError extends Error {}
 
+function extractContractError(result: unknown): string {
+  let foundCode: string | undefined
+  function walk(obj: unknown) {
+    if (foundCode || !obj || typeof obj !== 'object') return
+    if (Array.isArray(obj)) {
+      for (const item of obj) walk(item)
+      return
+    }
+    const rec = obj as Record<string, unknown>
+    const sw = rec._switch
+    if (sw && typeof sw === 'object' && (sw as Record<string, unknown>).name === 'sceContract') {
+      const val = rec._value
+      if (typeof val === 'number') {
+        foundCode = val.toString()
+        return
+      }
+    }
+    for (const value of Object.values(rec)) walk(value)
+  }
+  walk(result)
+  return foundCode ? `Error(Contract, #${foundCode})` : ''
+}
+
 /** Poll until a submitted transaction reaches a terminal status. */
 async function waitForTransaction(hash: string): Promise<TransactionConfirmation> {
   const { rpc } = await import('@stellar/stellar-sdk')
@@ -542,11 +525,14 @@ async function waitForTransaction(hash: string): Promise<TransactionConfirmation
       return result as unknown as TransactionConfirmation
     }
     if (result.status === rpc.Api.GetTransactionStatus.FAILED) {
-      throw new TransactionFailedError('Transaction failed on-chain')
+      const contractErr = extractContractError(result)
+      throw new TransactionFailedError(
+        `Transaction failed on-chain${contractErr ? `: ${contractErr}` : ''}`,
+      )
     }
     // NOT_FOUND means still pending, keep polling
   }
-  throw new Error('Transaction confirmation timed out')
+  throw new TransactionPendingError(hash)
 }
 
 /**
@@ -560,8 +546,6 @@ async function invokeSigned(
   sign: (xdr: string) => Promise<string>,
   amount?: number,
 ): Promise<{ hash: string; confirmation: TransactionConfirmation }> {
-  if (offline) throw new Error('Stellar node is offline')
-
   const { rpc, Contract, TransactionBuilder, Horizon, Transaction } =
     await import('@stellar/stellar-sdk')
 
@@ -569,12 +553,15 @@ async function invokeSigned(
   const horizon = new Horizon.Server(HORIZON_URL, { allowHttp: allowHttpFor(HORIZON_URL) })
   const contract = new Contract(CONTRACT_ID!)
 
-  const account = await withTimeout(
-    horizon.loadAccount(address),
-    'Stellar Horizon timed out loading account',
-  )
+  const [account, baseFee] = await Promise.all([
+    withTimeout(horizon.loadAccount(address), 'Stellar Horizon timed out loading account'),
+    horizon.fetchBaseFee().catch(() => 100),
+  ])
 
-  const tx = new TransactionBuilder(account, { fee: '100', networkPassphrase: NETWORK_PASSPHRASE })
+  const tx = new TransactionBuilder(account, {
+    fee: baseFee.toString(),
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
     .addOperation(contract.call(method, ...args))
     .setTimeout(180)
     .build()
@@ -606,15 +593,36 @@ async function invokeSigned(
   })
   let hash = localHash
   try {
-    const sendResult = await withTimeout(
-      server.sendTransaction(signedTx),
-      'Stellar RPC timed out submitting transaction',
-    )
-    if (sendResult.status === 'ERROR' || sendResult.status === 'TRY_AGAIN_LATER') {
-      throw new TransactionFailedError(
-        `Send failed: ${JSON.stringify(sendResult.errorResult ?? sendResult.status)}`,
+    let sendResult
+    let retries = 0
+    const MAX_RETRIES = 5
+    while (true) {
+      sendResult = await withTimeout(
+        server.sendTransaction(signedTx),
+        'Stellar RPC timed out submitting transaction',
       )
+      if (sendResult.status === 'TRY_AGAIN_LATER') {
+        if (retries < MAX_RETRIES) {
+          retries++
+          await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, retries - 1)))
+          continue
+        }
+        throw new TransactionFailedError('Send failed: TRY_AGAIN_LATER')
+      }
+      break
     }
+
+    if (sendResult.status === 'ERROR') {
+      const contractErr = extractContractError(sendResult)
+      const msg = contractErr
+        ? contractErr
+        : JSON.stringify(sendResult.errorResult ?? 'unknown', (_, v) =>
+            typeof v === 'bigint' ? v.toString() : v,
+          )
+      throw new TransactionFailedError(`Send failed: ${msg}`)
+    }
+
+    // DUPLICATE and PENDING fall through to polling.
     // The RPC hash should equal the hash computed from the signed envelope.
     if (sendResult.hash && sendResult.hash !== localHash) {
       throw new TransactionPendingError(localHash)
@@ -655,10 +663,10 @@ export async function estimateTransactionFee(
     const horizon = new Horizon.Server(HORIZON_URL, { allowHttp: allowHttpFor(HORIZON_URL) })
     const contract = new Contract(CONTRACT_ID)
 
-    const account = await withTimeout(
-      horizon.loadAccount(address),
-      'Stellar Horizon timed out loading account',
-    )
+    const [account, baseFee] = await Promise.all([
+      withTimeout(horizon.loadAccount(address), 'Stellar Horizon timed out loading account'),
+      horizon.fetchBaseFee().catch(() => 100),
+    ])
 
     let args: XdrTypes.ScVal[] = []
     if (kind === 'deposit') {
@@ -677,7 +685,7 @@ export async function estimateTransactionFee(
     }
 
     const tx = new TransactionBuilder(account, {
-      fee: '100',
+      fee: baseFee.toString(),
       networkPassphrase: NETWORK_PASSPHRASE,
     })
       .addOperation(contract.call(kind, ...args))

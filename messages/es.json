@@ -55,11 +55,11 @@
   },
   "Landing": {
     "eyebrow": "Bonos verdes · en Stellar",
-    "title": "Sé dueño de una parte de la transición energética.",
-    "titleAccent": " Desde un dólar.",
-    "sub": "Un fondo transparente que financia proyectos verdes verificados. Cada cifra se remonta a la cadena en dos toques, sin sorpresas.",
-    "ctaStart": "Empieza con un dólar",
-    "ctaExplore": "Mira dónde trabaja el fondo",
+    "title": "Participa en la transición energética.",
+    "titleAccent": " Invierte en proyectos verdes verificados.",
+    "sub": "Un fondo transparente que financia proyectos verdes verificados. Cada cifra se puede consultar en la cadena.",
+    "ctaStart": "Explora las opciones de inversión",
+    "ctaExplore": "Descubre dónde trabaja el fondo",
     "poolValue": "Valor del fondo",
     "projectsFunded": "Proyectos financiados",
     "returnRate": "Rentabilidad del bono proyectada",
@@ -67,7 +67,7 @@
     "howTitle": "Cómo funciona",
     "howSub": "Un fondo, muchos proyectos. Deposita USDC y recibe participaciones en una cartera seleccionada y evaluada por un oráculo.",
     "step1Title": "Deposita USDC",
-    "step1Body": "Desde un dólar. Siempre ves lo que recibes antes de firmar.",
+    "step1Body": "El mínimo actual se muestra antes de confirmar tu depósito.",
     "step2Title": "Recibe participaciones",
     "step2Body": "Participaciones, técnicamente tokens SEP-41 llamados HBS. Tu parte en todo el fondo.",
     "step3Title": "El fondo financia proyectos",
@@ -145,7 +145,7 @@
     "liquidLine": "Hoy el fondo está <b>29% líquido</b>: puedes retirar tu parte líquida cuando quieras.",
     "investCta": "Invertir {amount} USDC",
     "investCtaEmpty": "Invertir",
-    "reasonMin": "Introduce un importe de al menos 1 USDC",
+    "reasonMin": "Introduce al menos {min} USDC",
     "capMessage": "Tienes un saldo de ${cap}. Hoy puedes invertir hasta este importe.",
     "maxChip": "Máx",
     "depositMaxAvailable": "Invertir el máximo disponible",
@@ -162,7 +162,7 @@
     "pendingSub": "Normalmente ~5 segundos en Stellar.",
     "pendingTx": "tx a91f…3c0d · ver en Stellar Expert ↗",
     "successH1": "Bienvenido al fondo",
-    "successBody": "Has recibido <num>{shares} HBS</num> y ahora respaldas <b>{count} proyectos verificados</b>.",
+    "successBody": "You received <num>{shares} HBS</num> and now back <b>{count} verified projects</b>.",
     "viewInvestment": "Ver tu inversión",
     "viewExpert": "Ver en Stellar Expert",
     "goPortfolio": "Ir a la cartera"
@@ -204,7 +204,7 @@
     "withdrawCta": "Retirar ${amount}",
     "withdrawCtaEmpty": "Retirar",
     "reasonExceeds": "El importe supera lo que está líquido ahora mismo: usa Máx",
-    "reasonMin": "Introduce un importe de al menos 1 USDC",
+    "reasonMin": "Introduce al menos {min} USDC",
     "cancel": "Cancelar",
     "pendingH1": "Procesando tu retirada",
     "pendingSub": "Normalmente ~5 segundos en Stellar. tx 4d2c…9af1 ↗",
@@ -367,6 +367,9 @@
     "backAriaHidden": "←",
     "backLabel": "Volver a los proyectos",
     "verifiedSince": "Creador verificado · desde {since}",
+    "verifiedMetadata": "Metadatos verificados",
+    "metadataMismatch": "Discrepancia de metadatos",
+    "unverifiedMetadata": "Metadatos no verificados",
     "builtBy": "Creado por",
     "scoresTitle": "Puntuaciones verificadas por el oráculo",
     "creditLabel": "Calidad crediticia",
@@ -388,7 +391,9 @@
     "priceHistory": "Historial del precio",
     "priceLabel": "Precio",
     "yieldHistory": "Historial del rendimiento",
-    "yieldLabel": "Rendimiento"
+    "yieldLabel": "Rendimiento",
+    "yieldHelpLabel": "Acerca del rendimiento del bono",
+    "yieldHelp": "Este es el rendimiento indicativo actual del bono. Toca para obtener más información; no es un rendimiento garantizado."
   },
   "PriceHistory": {
     "title": "Precio del bono",
@@ -527,7 +532,7 @@
   "Metadata": {
     "home": {
       "title": "La energía solar, hecha finanzas",
-      "description": "Invierte desde un dólar en la transición energética. Un fondo transparente que financia proyectos verdes verificados en Stellar."
+      "description": "Participa en la transición energética mediante un fondo transparente que financia proyectos verdes verificados en Stellar."
     },
     "connect": {
       "title": "Conecta tu cartera",
