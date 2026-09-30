@@ -227,7 +227,10 @@ describe('isConstrainedCanvas', () => {
   it('is true on a slow-2g / 2g effective connection', () => {
     stubNavigator({ connection: { saveData: false, effectiveType: '2g' }, hardwareConcurrency: 8 })
     expect(isConstrainedCanvas()).toBe(true)
-    stubNavigator({ connection: { saveData: false, effectiveType: 'slow-2g' }, hardwareConcurrency: 8 })
+    stubNavigator({
+      connection: { saveData: false, effectiveType: 'slow-2g' },
+      hardwareConcurrency: 8,
+    })
     expect(isConstrainedCanvas()).toBe(true)
   })
 

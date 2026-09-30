@@ -96,7 +96,9 @@ try {
   console.log('\n📦 Bundle Size Report')
   console.log('─'.repeat(55))
   console.log(`  Largest app chunk:  ${formatBytes(largest.gzip)} KB gzip  (${largest.name})`)
-  console.log(`  Total app JS:       ${formatBytes(totalAppGzip)} KB gzip  (${appSizes.length} chunks)`)
+  console.log(
+    `  Total app JS:       ${formatBytes(totalAppGzip)} KB gzip  (${appSizes.length} chunks)`,
+  )
   console.log(`  Total JS (all):     ${formatBytes(totalAllGzip)} KB gzip`)
   console.log('─'.repeat(55))
 
@@ -110,14 +112,18 @@ try {
   // Check landing chunk budget
   if (largest.gzip > LANDING_BUDGET_KB * 1024) {
     const over = formatBytes(largest.gzip - LANDING_BUDGET_KB * 1024)
-    console.log(`\n❌ FAILED: Landing chunk ${formatBytes(largest.gzip)} KB exceeds budget ${LANDING_BUDGET_KB} KB (+${over} KB)`)
+    console.log(
+      `\n❌ FAILED: Landing chunk ${formatBytes(largest.gzip)} KB exceeds budget ${LANDING_BUDGET_KB} KB (+${over} KB)`,
+    )
     failed = true
   }
 
   // Check total bundle budget
   if (totalAllGzip > TOTAL_BUDGET_KB * 1024) {
     const over = formatBytes(totalAllGzip - TOTAL_BUDGET_KB * 1024)
-    console.log(`\n❌ FAILED: Total bundle ${formatBytes(totalAllGzip)} KB exceeds budget ${TOTAL_BUDGET_KB} KB (+${over} KB)`)
+    console.log(
+      `\n❌ FAILED: Total bundle ${formatBytes(totalAllGzip)} KB exceeds budget ${TOTAL_BUDGET_KB} KB (+${over} KB)`,
+    )
     failed = true
   }
 
@@ -128,7 +134,9 @@ try {
 
   const landingHeadroom = LANDING_BUDGET_KB - largest.gzip / 1024
   const totalHeadroom = TOTAL_BUDGET_KB - totalAllGzip / 1024
-  console.log(`\n✅ PASSED: ${formatBytes(landingHeadroom * 1024)} KB landing headroom, ${formatBytes(totalHeadroom * 1024)} KB total headroom\n`)
+  console.log(
+    `\n✅ PASSED: ${formatBytes(landingHeadroom * 1024)} KB landing headroom, ${formatBytes(totalHeadroom * 1024)} KB total headroom\n`,
+  )
   process.exit(0)
 } catch (error) {
   console.error('❌ Error checking bundle size:', error.message)

@@ -66,6 +66,7 @@ export function EmailAuthModal({ open, onClose, onSuccess, onSocialLogin }: Emai
       onClose()
     } catch (err: unknown) {
       setBioError((err instanceof Error && err.message) || 'Biometric login failed')
+      setBioError(err instanceof Error ? err.message : 'Biometric login failed')
     } finally {
       setBioLoading(false)
     }
@@ -77,11 +78,13 @@ export function EmailAuthModal({ open, onClose, onSuccess, onSocialLogin }: Emai
     setBioError(null)
     try {
       await registerBiometric(email)
-      // After registration, log in automatically
+      // Establish a verified login session after enrolling the credential.
+      await loginBiometric(email)
       if (onSuccess) onSuccess(email)
       onClose()
     } catch (err: unknown) {
       setBioError((err instanceof Error && err.message) || 'Biometric registration failed')
+      setBioError(err instanceof Error ? err.message : 'Biometric registration failed')
     } finally {
       setBioLoading(false)
     }

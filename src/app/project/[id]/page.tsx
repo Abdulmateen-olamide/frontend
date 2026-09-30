@@ -1,5 +1,7 @@
 import { Metadata } from 'next'
+import { getTranslations } from 'next-intl/server'
 import { getProject } from '../../../lib/api'
+import { absoluteTitle } from '../../../lib/routeMetadata'
 import { ProjectDetailClient } from './ProjectDetailClient'
 
 type Props = {
@@ -11,26 +13,29 @@ type Props = {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- an invalid route id resolves synchronously to the not-found state
       setData(null)
       return
+/**
+ * Per-project document metadata. The title is the project name only — the root
+ * layout's `title.template` appends the brand, and `absolute` is used for the
+ * error case so the "not found" title is not doubled up (#657).
+ */
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const t = await getTranslations('Metadata')
   const resolvedParams = await params
   const id = Number(resolvedParams?.id)
-  if (!Number.isFinite(id)) {
-    return {
-      title: 'Project Not Found | Heliobond',
-      description: 'The requested green energy project could not be found.',
-    }
-  }
+
+  const notFound = (): Metadata => ({
+    title: { absolute: absoluteTitle(t('projectNotFound.title')) },
+    description: t('projectNotFound.description'),
+    robots: { index: false, follow: false },
+  })
+
+  if (!Number.isFinite(id)) return notFound()
 
   const data = await getProject(id).catch(() => null)
-  if (!data) {
-    return {
-      title: 'Project Not Found | Heliobond',
-      description: 'The requested green energy project could not be found.',
-    }
-  }
+  if (!data) return notFound()
 
   const { project } = data
-  const title = `${project.name} — Green Bond Details | Heliobond`
+  const title = `${project.name} — Green Bond Details`
   const description = `${project.name} (${project.type}) in ${project.location}. Verified Credit Quality: ${project.credit}/100, Green Impact: ${project.green}/100. Stated Funding Goal: ${project.funded}.`
 
   return {

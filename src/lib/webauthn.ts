@@ -48,9 +48,12 @@ interface LoginOptions {
 }
 
 async function postJSON<T = unknown>(url: string, body: unknown): Promise<T> {
+async function postJSON<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    cache: 'no-store',
     body: JSON.stringify(body),
   })
   if (!res.ok) {
@@ -76,6 +79,61 @@ export async function registerBiometric(username: string): Promise<void> {
       id: base64urlToArrayBuffer(cred.id),
     })),
   } as unknown as PublicKeyCredentialCreationOptions
+export interface VerificationResult {
+  verified: true
+}
+type DescriptorJSON = Omit<PublicKeyCredentialDescriptor, 'id'> & { id: string }
+type RegistrationOptionsJSON = Omit<
+  PublicKeyCredentialCreationOptions,
+  'challenge' | 'user' | 'excludeCredentials'
+> & {
+  challenge: string
+  user: Omit<PublicKeyCredentialUserEntity, 'id'> & { id: string }
+  excludeCredentials?: DescriptorJSON[]
+}
+type LoginOptionsJSON = Omit<
+  PublicKeyCredentialRequestOptions,
+  'challenge' | 'allowCredentials'
+> & {
+  challenge: string
+  allowCredentials?: DescriptorJSON[]
+}
+function requireSupport(username: string) {
+  if (!username.trim()) throw new Error('Username is required')
+  if (typeof window === 'undefined' || !window.PublicKeyCredential || !navigator.credentials) {
+    throw new Error('WebAuthn is not supported')
+  }
+}
+async function complete(
+  url: string,
+  username: string,
+  credential: PublicKeyCredentialJSON,
+): Promise<VerificationResult> {
+  const result = await postJSON<unknown>(url, { username, credential })
+  if (
+    !result ||
+    typeof result !== 'object' ||
+    !('verified' in result) ||
+    result.verified !== true
+  ) {
+    throw new Error('Server did not verify the credential')
+  }
+  return { verified: true }
+}
+
+export async function registerBiometric(username: string): Promise<VerificationResult> {
+  requireSupport(username)
+  const json = await postJSON<RegistrationOptionsJSON>('/webauthn/register/begin', { username })
+
+  const options: PublicKeyCredentialCreationOptions = {
+    ...json,
+    challenge: base64urlToArrayBuffer(json.challenge),
+    user: { ...json.user, id: base64urlToArrayBuffer(json.user.id) },
+    excludeCredentials: json.excludeCredentials?.map((cred) => ({
+      ...cred,
+      id: base64urlToArrayBuffer(cred.id),
+    })),
+  }
 
   const credential = (await navigator.credentials.create({
     publicKey,
@@ -107,6 +165,21 @@ export async function loginBiometric(username: string): Promise<void> {
       id: base64urlToArrayBuffer(cred.id),
     })),
   } as unknown as PublicKeyCredentialRequestOptions
+  return complete('/webauthn/register/complete', username, credentialJSON)
+}
+
+export async function loginBiometric(username: string): Promise<VerificationResult> {
+  requireSupport(username)
+  const json = await postJSON<LoginOptionsJSON>('/webauthn/login/begin', { username })
+
+  const options: PublicKeyCredentialRequestOptions = {
+    ...json,
+    challenge: base64urlToArrayBuffer(json.challenge),
+    allowCredentials: json.allowCredentials?.map((cred) => ({
+      ...cred,
+      id: base64urlToArrayBuffer(cred.id),
+    })),
+  }
 
   const assertion = (await navigator.credentials.get({
     publicKey,
@@ -129,4 +202,5 @@ export async function loginBiometric(username: string): Promise<void> {
   }
 
   return postJSON<void>('/webauthn/login/complete', { username, credential: credentialJSON })
+  return complete('/webauthn/login/complete', username, credentialJSON)
 }

@@ -303,22 +303,46 @@ describe('biometricLogin', () => {
     expect(lastWarning()).toContain('not supported')
   })
 
-  it('returns true when the authenticator returns a credential', async () => {
+  it('returns true when server challenge-response succeeds', async () => {
     const api = await loadApi()
     vi.stubGlobal('PublicKeyCredential', function PublicKeyCredential() {})
-    const get = vi.fn().mockResolvedValue({ id: 'cred' })
-    vi.stubGlobal('navigator', { ...navigator, credentials: { get } })
-    await expect(api.biometricLogin()).resolves.toBe(true)
-    expect(get).toHaveBeenCalledWith({
-      publicKey: expect.objectContaining({ userVerification: 'required' }),
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/login/begin')) {
+        return Promise.resolve(jsonResponse({ challenge: 'dGVzdA', allowCredentials: [] }))
+      }
+      if (url.includes('/login/complete')) {
+        return Promise.resolve(jsonResponse({ verified: true }))
+      }
+      return Promise.reject(new Error(`Unexpected fetch URL: ${url}`))
     })
+    vi.stubGlobal('fetch', mockFetch)
+
+    const get = vi.fn().mockResolvedValue({
+      id: 'cred-123',
+      rawId: new Uint8Array([1, 2, 3]).buffer,
+      type: 'public-key',
+      response: {
+        authenticatorData: new Uint8Array([4, 5]).buffer,
+        clientDataJSON: new Uint8Array([6, 7]).buffer,
+        signature: new Uint8Array([8, 9]).buffer,
+      },
+    })
+    vi.stubGlobal('navigator', { ...navigator, credentials: { get } })
+
+    await expect(api.biometricLogin('user@example.com')).resolves.toBe(true)
+    expect(mockFetch).toHaveBeenCalledWith('/webauthn/login/begin', expect.anything())
+    expect(get).toHaveBeenCalled()
+    expect(mockFetch).toHaveBeenCalledWith('/webauthn/login/complete', expect.anything())
   })
 
-  it('returns false when the authenticator rejects', async () => {
+  it('returns false when the authenticator or server rejects', async () => {
     const api = await loadApi()
     vi.stubGlobal('PublicKeyCredential', function PublicKeyCredential() {})
     const get = vi.fn().mockRejectedValue(new Error('NotAllowedError'))
     vi.stubGlobal('navigator', { ...navigator, credentials: { get } })
-    await expect(api.biometricLogin()).resolves.toBe(false)
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ challenge: 'dGVzdA', allowCredentials: [] }))
+    await expect(api.biometricLogin('user@example.com')).resolves.toBe(false)
+    expect(get).toHaveBeenCalledOnce()
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 })

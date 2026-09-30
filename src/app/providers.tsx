@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { ThemeProvider } from '../theme/ThemeProvider'
 import { WalletProvider, useWallet } from '../wallet/WalletProvider'
+import { TransactionsProvider } from '../wallet/TransactionsProvider'
 import { ToastProvider, SessionTimeoutModal, useToast } from '../components'
 import { SessionProvider } from '../session/SessionProvider'
 import { RecurringInvestmentSync } from '../session/RecurringInvestmentSync'
@@ -13,6 +14,7 @@ import { usePathname } from 'next/navigation'
 import { useReportWebVitals } from 'next/web-vitals'
 import { track } from '../lib/analytics'
 import { installGlobalErrorHandlers, reportWebVitals } from '../lib/errorReporting'
+import { TelemetryConsent } from '../components/TelemetryConsent'
 import { HORIZON_URL } from '../config/network'
 
 function Analytics() {
@@ -163,18 +165,21 @@ export function Providers({ children }: { children: ReactNode }) {
     <ThemeProvider>
       <WalletProvider>
         <SessionProvider>
+          <TransactionsProvider>
           <ToastProvider>
             <WatchlistProvider>
               <YieldAlertProvider>
                 <RecurringInvestmentSync />
                 <Analytics />
                 <Telemetry />
+                <TelemetryConsent />
                 <SessionWatcher />
                 <OfflineBanner />
                 {children}
               </YieldAlertProvider>
             </WatchlistProvider>
           </ToastProvider>
+          </TransactionsProvider>
         </SessionProvider>
       </WalletProvider>
     </ThemeProvider>

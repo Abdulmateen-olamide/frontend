@@ -6,10 +6,7 @@
  */
 
 import { type Project, type ProjectType } from '../data'
-import {
-  type ProjectDetail,
-  type ScorePoint,
-} from '../data/projectDetails'
+import { type ProjectDetail, type ScorePoint } from '../data/projectDetails'
 import {
   selectProjects,
   selectProjectById,
@@ -66,8 +63,7 @@ async function simulateRegistryCall(
   const server = new rpc.Server(RPC_URL, { allowHttp: false })
   const contract = new Contract(REGISTRY_CONTRACT_ID)
   const source = new Account(sourceAddress, '0')
-  const networkPassphrase =
-    STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
+  const networkPassphrase = STELLAR_NETWORK === 'public' ? Networks.PUBLIC : Networks.TESTNET
 
   const buildArgs = (useU32: boolean) =>
     args.map((a) => {
@@ -143,10 +139,7 @@ export interface OffChainMetadata {
 }
 
 /** Map on-chain project struct and optional metadata to UI Project */
-export function mapOnChainProject(
-  raw: OnChainProjectRaw,
-  metadata?: OffChainMetadata,
-): Project {
+export function mapOnChainProject(raw: OnChainProjectRaw, metadata?: OffChainMetadata): Project {
   const id = Number(raw.id)
   const credit = Number(raw.credit_score ?? 80)
   const green = Number(raw.green_score ?? 80)
@@ -396,11 +389,13 @@ export async function fetchScoreHistory(
   }
 
   try {
-    const raw = (await simulateRegistryCall(
-      'get_score_history',
-      [id],
-      sourceAddress,
-    )) as Array<{ date?: string; timestamp?: number; credit: number; green: number; hash?: string }>
+    const raw = (await simulateRegistryCall('get_score_history', [id], sourceAddress)) as Array<{
+      date?: string
+      timestamp?: number
+      credit: number
+      green: number
+      hash?: string
+    }>
 
     if (Array.isArray(raw) && raw.length > 0) {
       const credit: ScorePoint[] = raw.map((r, i) => ({
