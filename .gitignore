@@ -47,7 +47,6 @@ static/uploads/
 dist/
 
 # IDE
-.vscode/
 .idea/
 
 # editor swap / backup files (Vim & friends) — local state, never reviewable
@@ -67,3 +66,4 @@ dist/
 # Local agent tooling, not part of the app.
 AGENTS.md
 CLAUDE.md
+config.bat
