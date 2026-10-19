@@ -102,4 +102,71 @@ describe('quarterlyReportToCsv', () => {
     expect(lines[1]).toBe('2025-Q1,Quarter Summary,1000.00,0.00,0.00,0.00,,,,')
     expect(lines[2]).toBe(',Event Detail,,,,,Solar Farm A,deposit,1000.00,0.00')
   })
+
+  it('quotes commas, quotes and newlines in project names', () => {
+    const events: InvestmentEvent[] = [
+      {
+        id: '1',
+        projectName: 'Solar, Wind & "Hydro"',
+        date: '2025-01-10',
+        type: 'deposit',
+        amountUSD: 1000,
+      },
+      {
+        id: '2',
+        projectName: 'Line one\nLine two',
+        date: '2025-01-11',
+        type: 'deposit',
+        amountUSD: 10,
+      },
+    ]
+    const csv = quarterlyReportToCsv(computeQuarterlyTaxReport(events))
+    expect(csv).toContain(',"Solar, Wind & ""Hydro""",deposit,1000.00,0.00')
+    expect(csv).toContain(',"Line one\nLine two",deposit,10.00,0.00')
+  })
+
+  it('neutralises spreadsheet formulas in project names', () => {
+    const events: InvestmentEvent[] = [
+      {
+        id: '1',
+        projectName: "=cmd|' /C calc'!A0",
+        date: '2025-01-10',
+        type: 'deposit',
+        amountUSD: 1000,
+      },
+      {
+        id: '2',
+        projectName: '+1+1',
+        date: '2025-01-11',
+        type: 'deposit',
+        amountUSD: 10,
+      },
+      {
+        id: '3',
+        projectName: '@SUM(A1)',
+        date: '2025-01-12',
+        type: 'deposit',
+        amountUSD: 10,
+      },
+    ]
+    const csv = quarterlyReportToCsv(computeQuarterlyTaxReport(events))
+    expect(csv).toContain("'=cmd|' /C calc'!A0,deposit,1000.00,0.00")
+    expect(csv).toContain("'+1+1,deposit,10.00,0.00")
+    expect(csv).toContain("'@SUM(A1),deposit,10.00,0.00")
+  })
+
+  it('keeps negative numeric fields unquoted', () => {
+    const events: InvestmentEvent[] = [
+      {
+        id: '1',
+        projectName: 'Solar Farm A',
+        date: '2025-01-10',
+        type: 'withdrawal',
+        amountUSD: 100,
+        costBasisUSD: 200,
+      },
+    ]
+    const csv = quarterlyReportToCsv(computeQuarterlyTaxReport(events))
+    expect(csv.split('\n')[1]).toBe('2025-Q1,Quarter Summary,0.00,100.00,0.00,-100.00,,,,')
+  })
 })
